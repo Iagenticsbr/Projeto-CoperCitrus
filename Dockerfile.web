@@ -1,32 +1,43 @@
-# Imagem do painel e do envio de planilha. Sem navegador de proposito.
+# Painel, envio de planilha e coleta na mesma imagem.
 #
-# A coleta exige navegador com sessao valida e, em algumas fontes, alguem para
-# concluir a verificacao humana. Servidor nao tem nenhum dos dois. Entao a
-# coleta roda na maquina do operador e publica o resultado em POST /ingest.
-# Manter o navegador fora daqui deixa a imagem pequena e o deploy rapido.
-FROM python:3.12-slim
+# A coleta usa Chromium em modo janela dentro de um display virtual (Xvfb).
+# Headless devolve zero: os comparadores recusam o Chromium headless. Xvfb da
+# um navegador real desenhando numa tela que ninguem ve, sem falsificar
+# identidade.
+#
+# Limite conhecido: fonte que exige verificacao humana ou sessao autenticada
+# nao funciona aqui, porque nao ha ninguem para concluir o desafio e o IP e de
+# datacenter. Para essas, colete na maquina do operador e publique em
+# POST /ingest.
+FROM mcr.microsoft.com/playwright/python:v1.61.0-noble
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    RPA_DATA_DIR=/dados
+    RPA_DATA_DIR=/dados \
+    RPA_HEADLESS=false \
+    REQUEST_DELAY_SECONDS=4.0 \
+    RPA_LOJAS_PREFERIDAS="mercado livre,shopee" \
+    RPA_SOMENTE_EXATOS=true \
+    RPA_AGENDA_DIA=1
 
 WORKDIR /app
 
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir --break-system-packages \
         "openpyxl>=3.1,<4" \
         "fastapi>=0.115,<1" \
         "uvicorn[standard]>=0.32,<1" \
         "python-multipart>=0.0.9" \
-    && pip install --no-cache-dir --no-deps .
+    && pip install --no-cache-dir --break-system-packages --no-deps .
 
-# Roda como root de proposito: o volume do Railway e montado com dono root e
-# um usuario sem privilegio nao consegue gravar nele. O container nao expoe
-# shell nem executa conteudo enviado; apenas le planilhas e grava a base.
+# Roda como root: o volume do Railway e montado com dono root e um usuario
+# sem privilegio nao consegue gravar nele.
 RUN mkdir -p /dados
 
 EXPOSE 8000
 
-CMD ["copercitrus-web"]
+# xvfb-run cria o display virtual antes do servidor subir, para a coleta
+# disparada pela tela ou pela agenda encontrar um X disponivel.
+CMD ["xvfb-run", "-a", "--server-args=-screen 0 1440x1000x24", "copercitrus-web"]

@@ -18,11 +18,30 @@ class CollectionService:
         result_limit: int,
         request_delay_seconds: float = 1.0,
         sleeper: Callable[[float], None] = time.sleep,
+        somente_exatos: bool = False,
+        similaridade_minima: float = 80.0,
     ) -> None:
         self.providers = list(providers)
         self.result_limit = result_limit
         self.request_delay_seconds = request_delay_seconds
         self.sleeper = sleeper
+        self.somente_exatos = somente_exatos
+        self.similaridade_minima = similaridade_minima
+
+    def _filtrar(self, results: list) -> list:
+        """Descarta o que nao e o produto pedido.
+
+        Sem esse corte a base enche de "parecido": outra potencia, outra
+        voltagem, kit com acessorio. Para comparar preco do mesmo item, isso
+        e ruido, nao alternativa.
+        """
+        if not self.somente_exatos:
+            return results
+        return [
+            item
+            for item in results
+            if item.similarity_score >= self.similaridade_minima
+        ]
 
     def collect(self, products: Iterable[ProductInput]) -> list[CollectionRow]:
         rows: list[CollectionRow] = []
@@ -63,8 +82,9 @@ class CollectionService:
                     traceback.print_exc()
                     continue
 
+                results = self._filtrar(results)
                 if not results:
-                    print("        sem resultado", flush=True)
+                    print("        sem resultado exato", flush=True)
                     rows.append(CollectionRow.empty(product, provider.name))
                     continue
                 precos = [item.price_min for item in results if item.price_min]

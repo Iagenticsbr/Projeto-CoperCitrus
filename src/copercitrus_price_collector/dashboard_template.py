@@ -107,7 +107,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .oportunidade .nome { font-weight:560; }
   .oportunidade .detalhe { color:var(--suave); font-size:12.5px; margin-top:3px; }
   .preferida { color:var(--verde); font-weight:640; }
-  .preferida::before { content:"°5"; margin-right:5px; font-size:11px; }
+  .preferida::before { content:"\2605"; margin-right:5px; font-size:11px; }
   .economia { font-size:19px; font-weight:680; color:var(--verde); white-space:nowrap; }
 </style>
 </head>

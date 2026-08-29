@@ -119,7 +119,11 @@ def executar_coleta(execucao: Execucao, caminho: Path, fontes: str, limite: int)
         with BrowserRpa(configuracao) as navegador:
             provedores = _build_providers(selecionadas, navegador)
             servico = CollectionService(
-                provedores, limite, configuracao.request_delay_seconds
+                provedores,
+                limite,
+                configuracao.request_delay_seconds,
+                somente_exatos=configuracao.somente_exatos,
+                similaridade_minima=configuracao.similaridade_minima,
             )
             linhas = servico.collect(produtos)
 
@@ -283,6 +287,23 @@ def criar_app():
                 "agenda": estado,
             }
         )
+
+    @app.post("/reiniciar-base")
+    def reiniciar_base(x_token: str | None = Header(default=None)) -> JSONResponse:
+        """Apaga historico e base para recomecar com dados novos.
+
+        Existe porque trocar a base pelo painel exige remover o que ja esta
+        gravado; sem isso a dedup mantem as medicoes antigas convivendo com
+        as novas e a comparacao fica sem sentido.
+        """
+        if INGEST_TOKEN and x_token != INGEST_TOKEN:
+            raise HTTPException(401, "Token invalido")
+        removidos = []
+        for arquivo in (HISTORICO, BASE_ATUAL):
+            if arquivo.is_file():
+                arquivo.unlink()
+                removidos.append(arquivo.name)
+        return JSONResponse({"removidos": removidos})
 
     @app.get("/saude")
     def saude() -> JSONResponse:

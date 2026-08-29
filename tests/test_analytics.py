@@ -127,3 +127,61 @@ class StorePricesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ModoExatoTest(unittest.TestCase):
+    """Comparar preco do mesmo item exige descartar o parecido."""
+
+    def _servico(self, resultados, **kwargs):
+        from copercitrus_price_collector.service import CollectionService
+
+        class ProvedorFalso:
+            name = "Google Shopping"
+
+            def search(self, produto, limite):
+                return resultados
+
+        return CollectionService([ProvedorFalso()], 5, 0.0, **kwargs)
+
+    def _oferta(self, score):
+        return SearchResult(
+            provider="Google Shopping", rank=1, title="Lavadora", description="",
+            price_min=900.0, price_max=900.0, currency="BRL",
+            purchase_url="https://exemplo.com/1", similarity_score=score,
+            match_type="COMPATIVEL" if score >= 80 else "SIMILAR",
+        )
+
+    def test_keeps_only_the_requested_product(self):
+        produto = ProductInput(4, "Lavadora J6600", "Jacto", None, "SKU-1")
+        servico = self._servico(
+            [self._oferta(92.0), self._oferta(61.0)], somente_exatos=True
+        )
+
+        linhas = servico.collect([produto])
+
+        self.assertEqual(1, len(linhas))
+        self.assertEqual(92.0, linhas[0].result.similarity_score)
+
+    def test_similar_offers_kept_when_asked(self):
+        produto = ProductInput(4, "Lavadora J6600", "Jacto", None, "SKU-1")
+        servico = self._servico(
+            [self._oferta(92.0), self._oferta(61.0)], somente_exatos=False
+        )
+
+        self.assertEqual(2, len(servico.collect([produto])))
+
+    def test_product_without_exact_match_is_recorded_as_empty(self):
+        produto = ProductInput(4, "Lavadora J6600", "Jacto", None, "SKU-1")
+        servico = self._servico([self._oferta(40.0)], somente_exatos=True)
+
+        linhas = servico.collect([produto])
+
+        self.assertEqual("SEM_RESULTADO", linhas[0].status)
+
+    def test_threshold_is_configurable(self):
+        produto = ProductInput(4, "Lavadora J6600", "Jacto", None, "SKU-1")
+        servico = self._servico(
+            [self._oferta(65.0)], somente_exatos=True, similaridade_minima=60.0
+        )
+
+        self.assertEqual("OK", servico.collect([produto])[0].status)

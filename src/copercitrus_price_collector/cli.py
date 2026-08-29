@@ -9,7 +9,7 @@ from .errors import ConfigurationError, PriceCollectorError
 from .database import export_csv, export_database
 from .dashboard import render_dashboard
 from .historico import append_run
-from .publicar import publicar
+from .publicar import publicar, reiniciar
 from .providers import (
     BingShoppingProvider,
     BuscapeProvider,
@@ -46,6 +46,11 @@ def _parser() -> argparse.ArgumentParser:
     envio.add_argument("url", help="endereco da aplicacao, por exemplo https://app.up.railway.app")
     envio.add_argument("--database", default="resultados/precos.db")
     envio.add_argument("--token", help="valor de RPA_INGEST_TOKEN configurado no servidor")
+    envio.add_argument(
+        "--substituir",
+        action="store_true",
+        help="apaga a base publicada antes de enviar, em vez de acumular",
+    )
 
     login = subcommands.add_parser(
         "login",
@@ -117,6 +122,21 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     collect.add_argument(
+        "--somente-exatos",
+        action="store_true",
+        help="mantem apenas o produto pedido, descartando similares (padrao)",
+    )
+    collect.add_argument(
+        "--incluir-similares",
+        action="store_true",
+        help="mantem tambem produtos parecidos na base",
+    )
+    collect.add_argument(
+        "--similaridade-minima",
+        type=float,
+        help="corte de similaridade do modo exato, de 0 a 100 (padrao 80)",
+    )
+    collect.add_argument(
         "--cookies",
         help=(
             "JSON de cookies exportado do navegador (extensao Cookie-Editor) "
@@ -181,6 +201,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "publicar":
+            if args.substituir:
+                limpeza = reiniciar(args.url, args.token)
+                print(f"Base anterior removida: {limpeza.get('removidos')}")
             resposta = publicar(args.database, args.url, args.token)
             print(
                 f"Publicado: {resposta.get('recebidas')} ofertas enviadas, "
@@ -254,10 +277,29 @@ def main(argv: list[str] | None = None) -> int:
         if delay < 0:
             raise ConfigurationError("--delay nao pode ser negativo")
 
+        if args.somente_exatos and args.incluir_similares:
+            raise ConfigurationError(
+                "Use --somente-exatos ou --incluir-similares, nao os dois"
+            )
+        if args.incluir_similares:
+            settings = replace(settings, somente_exatos=False)
+        if args.somente_exatos:
+            settings = replace(settings, somente_exatos=True)
+        if args.similaridade_minima is not None:
+            settings = replace(
+                settings, similaridade_minima=args.similaridade_minima
+            )
+
         products = read_products(args.input, args.sheet, args.max_products)
         with BrowserRpa(settings) as browser:
             providers = _build_providers(selected, browser)
-            rows = CollectionService(providers, limit, delay).collect(products)
+            rows = CollectionService(
+                providers,
+                limit,
+                delay,
+                somente_exatos=settings.somente_exatos,
+                similaridade_minima=settings.similaridade_minima,
+            ).collect(products)
 
         destination = export_results(rows, args.output)
         database = export_database(rows, args.database)

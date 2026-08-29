@@ -20,6 +20,8 @@ def _settings(**overrides):
         "storage_state_path": None,
         "cookies_path": None,
         "lojas_preferidas": ("mercado livre", "shopee"),
+        "somente_exatos": True,
+        "similaridade_minima": 80.0,
     }
     base.update(overrides)
     return Settings(**base)

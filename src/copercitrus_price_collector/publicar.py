@@ -48,6 +48,24 @@ def carregar_ofertas(database: str | Path) -> list[dict]:
         conexao.close()
 
 
+def reiniciar(url: str, token: str | None = None) -> dict:
+    """Apaga a base publicada antes de enviar uma coleta nova."""
+    destino = url.rstrip("/") + "/reiniciar-base"
+    cabecalhos = {"Content-Type": "application/json"}
+    if token:
+        cabecalhos["x-token"] = token
+    requisicao = urllib.request.Request(destino, data=b"", headers=cabecalhos)
+    try:
+        with urllib.request.urlopen(requisicao, timeout=60) as resposta:
+            return json.loads(resposta.read())
+    except urllib.error.HTTPError as exc:
+        raise PriceCollectorError(
+            f"O servidor recusou a limpeza ({exc.code})"
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise PriceCollectorError(f"Nao foi possivel alcancar {destino}") from exc
+
+
 def publicar(
     database: str | Path,
     url: str,

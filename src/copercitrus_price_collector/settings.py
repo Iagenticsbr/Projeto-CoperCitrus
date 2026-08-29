@@ -55,6 +55,8 @@ class Settings:
     storage_state_path: str | None
     cookies_path: str | None
     lojas_preferidas: tuple[str, ...]
+    somente_exatos: bool
+    similaridade_minima: float
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -81,6 +83,9 @@ class Settings:
                 ).split(",")
                 if item.strip()
             ),
+            # Exige o produto pedido, nao um parente dele.
+            somente_exatos=_bool_env("RPA_SOMENTE_EXATOS", True),
+            similaridade_minima=_float_env("RPA_SIMILARIDADE_MINIMA", 80.0),
         )
         if settings.browser_timeout_seconds <= 0:
             raise ConfigurationError(
@@ -93,6 +98,10 @@ class Settings:
         if settings.manual_verification_seconds < 0:
             raise ConfigurationError(
                 "RPA_MANUAL_VERIFICATION_SECONDS nao pode ser negativo"
+            )
+        if not 0 <= settings.similaridade_minima <= 100:
+            raise ConfigurationError(
+                "RPA_SIMILARIDADE_MINIMA deve estar entre 0 e 100"
             )
         if not 1 <= settings.result_limit <= 20:
             raise ConfigurationError("RESULT_LIMIT deve estar entre 1 e 20")
