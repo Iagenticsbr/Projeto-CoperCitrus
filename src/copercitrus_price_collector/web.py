@@ -211,7 +211,7 @@ def criar_app():
 
     @app.get("/dashboard", response_class=HTMLResponse)
     def painel() -> str:
-        if not BASE_ATUAL.is_file():
+        if not BASE_ATUAL.is_file() and not HISTORICO.is_file():
             return PAGINA_SEM_DADOS
         dados = collect_dashboard_data(BASE_ATUAL, HISTORICO)
         return HTML_TEMPLATE.replace(

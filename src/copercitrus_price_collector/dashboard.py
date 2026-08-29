@@ -31,23 +31,35 @@ def collect_dashboard_data(
 ) -> dict:
     """Le a base da coleta e o historico e devolve o payload do painel."""
     source = Path(database)
-    if not source.is_file():
+    vazio = {
+        "gerado_em": datetime.now().strftime("%d/%m/%Y %H:%M"),
+        "base": str(source),
+        "produtos": [],
+        "ofertas": [],
+        "resumo": [],
+        "estatisticas": [],
+        "lojas": [],
+    }
+    if source.is_file():
+        connection = sqlite3.connect(source)
+        connection.row_factory = sqlite3.Row
+        try:
+            dados = {
+                **vazio,
+                "produtos": _read_table(connection, "produtos"),
+                "ofertas": _read_table(connection, "ofertas"),
+                "resumo": _read_table(connection, "resumo_precos"),
+                "estatisticas": _read_table(connection, "estatisticas_precos"),
+                "lojas": _read_table(connection, "precos_por_loja"),
+            }
+        finally:
+            connection.close()
+    elif historico and Path(historico).is_file():
+        # Instancia que so recebe por ingestao nao tem a base da coleta; o
+        # historico sozinho ja sustenta o painel inteiro.
+        dados = dict(vazio)
+    else:
         raise ConfigurationError(f"Base de dados nao encontrada: {source}")
-
-    connection = sqlite3.connect(source)
-    connection.row_factory = sqlite3.Row
-    try:
-        dados = {
-            "gerado_em": datetime.now().strftime("%d/%m/%Y %H:%M"),
-            "base": str(source),
-            "produtos": _read_table(connection, "produtos"),
-            "ofertas": _read_table(connection, "ofertas"),
-            "resumo": _read_table(connection, "resumo_precos"),
-            "estatisticas": _read_table(connection, "estatisticas_precos"),
-            "lojas": _read_table(connection, "precos_por_loja"),
-        }
-    finally:
-        connection.close()
 
     dados["historico"] = (
         load_history(historico)
