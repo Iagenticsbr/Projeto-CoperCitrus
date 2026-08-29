@@ -85,7 +85,7 @@ class Settings:
             ),
             # Exige o produto pedido, nao um parente dele.
             somente_exatos=_bool_env("RPA_SOMENTE_EXATOS", True),
-            similaridade_minima=_float_env("RPA_SIMILARIDADE_MINIMA", 80.0),
+            similaridade_minima=_float_env("RPA_SIMILARIDADE_MINIMA", 70.0),
         )
         if settings.browser_timeout_seconds <= 0:
             raise ConfigurationError(

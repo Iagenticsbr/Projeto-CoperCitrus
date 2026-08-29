@@ -19,7 +19,7 @@ class CollectionService:
         request_delay_seconds: float = 1.0,
         sleeper: Callable[[float], None] = time.sleep,
         somente_exatos: bool = False,
-        similaridade_minima: float = 80.0,
+        similaridade_minima: float = 70.0,
     ) -> None:
         self.providers = list(providers)
         self.result_limit = result_limit
