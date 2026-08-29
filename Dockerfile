@@ -21,7 +21,7 @@ RUN useradd --create-home --uid 10001 appuser \
     && chown appuser:appuser /dados
 USER appuser
 
-VOLUME ["/dados"]
+# O volume e declarado na plataforma (Railway Volumes), nao no Dockerfile.
 
 ENTRYPOINT ["xvfb-run", "-a", "--server-args=-screen 0 1440x1000x24", "copercitrus-price"]
 CMD ["--help"]

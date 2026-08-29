@@ -30,7 +30,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
 RUN mkdir -p /dados && chown pwuser:pwuser /dados /app
 USER pwuser
 
-VOLUME ["/dados"]
+# O volume e declarado na plataforma (Railway Volumes), nao no Dockerfile.
 EXPOSE 8000
 
 # xvfb-run cria o display virtual antes de subir o servidor, para a coleta
