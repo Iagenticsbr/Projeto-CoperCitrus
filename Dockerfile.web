@@ -1,38 +1,32 @@
-# Imagem unica: painel, envio de planilha e coleta.
+# Imagem do painel e do envio de planilha. Sem navegador de proposito.
 #
-# A coleta usa Chromium em modo janela dentro de um display virtual (Xvfb).
-# Rodar headless devolve zero resultado: os comparadores recusam o Chromium
-# headless. Xvfb da um navegador real desenhando numa tela que ninguem ve, sem
-# falsificar identidade.
-#
-# O que este container NAO resolve: fonte que exige verificacao humana ou
-# sessao autenticada. Google e Shopee bloqueiam IP de datacenter e nao ha
-# ninguem para concluir o desafio. Para essas, colete na maquina do operador e
-# publique em POST /ingest.
-FROM mcr.microsoft.com/playwright/python:v1.61.0-noble
+# A coleta exige navegador com sessao valida e, em algumas fontes, alguem para
+# concluir a verificacao humana. Servidor nao tem nenhum dos dois. Entao a
+# coleta roda na maquina do operador e publica o resultado em POST /ingest.
+# Manter o navegador fora daqui deixa a imagem pequena e o deploy rapido.
+FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    RPA_DATA_DIR=/dados \
-    RPA_HEADLESS=false \
-    REQUEST_DELAY_SECONDS=4.0 \
-    RPA_LOJAS_PREFERIDAS="mercado livre,shopee" \
-    RPA_AGENDA_DIA=1
+    RPA_DATA_DIR=/dados
 
 WORKDIR /app
 
-COPY pyproject.toml README.md requirements.txt ./
+COPY pyproject.toml README.md ./
 COPY src ./src
 
-RUN pip install --no-cache-dir -r requirements.txt \
+RUN pip install --no-cache-dir \
+        "openpyxl>=3.1,<4" \
+        "fastapi>=0.115,<1" \
+        "uvicorn[standard]>=0.32,<1" \
+        "python-multipart>=0.0.9" \
     && pip install --no-cache-dir --no-deps .
 
-RUN mkdir -p /dados && chown pwuser:pwuser /dados /app
-USER pwuser
+RUN useradd --create-home --uid 10001 appuser \
+    && mkdir -p /dados \
+    && chown appuser:appuser /dados
+USER appuser
 
-# O volume e declarado na plataforma (Railway Volumes), nao no Dockerfile.
 EXPOSE 8000
 
-# xvfb-run cria o display virtual antes de subir o servidor, para a coleta
-# disparada pela tela ou pela agenda encontrar um X disponivel.
-CMD ["xvfb-run", "-a", "--server-args=-screen 0 1440x1000x24", "copercitrus-web"]
+CMD ["copercitrus-web"]
