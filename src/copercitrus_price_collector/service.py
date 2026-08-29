@@ -82,9 +82,19 @@ class CollectionService:
                     traceback.print_exc()
                     continue
 
+                provider_results = list(results)
+                brutos = len(results)
                 results = self._filtrar(results)
                 if not results:
-                    print("        sem resultado exato", flush=True)
+                    if brutos:
+                        melhor = max(item.similarity_score for item in provider_results)
+                        print(
+                            f"        {brutos} ofertas encontradas, nenhuma exata "
+                            f"(melhor similaridade {melhor:.0f}%)",
+                            flush=True,
+                        )
+                    else:
+                        print("        sem resultado", flush=True)
                     rows.append(CollectionRow.empty(product, provider.name))
                     continue
                 precos = [item.price_min for item in results if item.price_min]
