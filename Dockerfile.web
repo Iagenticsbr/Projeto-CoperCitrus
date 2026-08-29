@@ -22,10 +22,10 @@ RUN pip install --no-cache-dir \
         "python-multipart>=0.0.9" \
     && pip install --no-cache-dir --no-deps .
 
-RUN useradd --create-home --uid 10001 appuser \
-    && mkdir -p /dados \
-    && chown appuser:appuser /dados
-USER appuser
+# Roda como root de proposito: o volume do Railway e montado com dono root e
+# um usuario sem privilegio nao consegue gravar nele. O container nao expoe
+# shell nem executa conteudo enviado; apenas le planilhas e grava a base.
+RUN mkdir -p /dados
 
 EXPOSE 8000
 
