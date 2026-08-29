@@ -99,12 +99,15 @@ def _preparar_pastas() -> None:
 
 def executar_coleta(execucao: Execucao, caminho: Path, fontes: str, limite: int) -> None:
     """Roda a coleta e grava base, planilha, CSV e historico."""
-    from .browser import BrowserRpa
-    from .cli import _build_providers
-    from .service import CollectionService
-    from .settings import Settings
-
     try:
+        # Import dentro do try de proposito: sem navegador instalado a falha
+        # precisa aparecer na tela, e nao matar a thread em silencio deixando
+        # a execucao presa em "na fila".
+        from .browser import BrowserRpa
+        from .cli import _build_providers
+        from .service import CollectionService
+        from .settings import Settings
+
         execucao.estado = "lendo planilha"
         produtos = read_products(caminho)
         execucao.produtos = len(produtos)
@@ -146,10 +149,13 @@ def executar_coleta(execucao: Execucao, caminho: Path, fontes: str, limite: int)
         execucao.estado = "erro"
         execucao.erro = str(exc)
         execucao.registrar(f"Erro: {exc}")
-    except Exception as exc:  # pragma: no cover - falha inesperada de runtime
+    except BaseException as exc:  # pragma: no cover - falha inesperada
+        import traceback
+
         execucao.estado = "erro"
         execucao.erro = f"{type(exc).__name__}: {exc}"
         execucao.registrar(execucao.erro)
+        traceback.print_exc()
 
 
 def criar_app():
