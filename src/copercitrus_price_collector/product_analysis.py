@@ -137,10 +137,44 @@ def extract_package_quantity(text: str | None) -> str | None:
 # Linhas do card que nao sao nome de loja. O Google intercala politica de
 # entrega, parcelamento e selos entre o preco e o nome do vendedor.
 SELLER_NOISE = (
-    "avaliac", "compar", "cupom", "desconto", "devoluc", "economize",
-    "entrega", "estoque", "frete", "gratis", "mes x", "oferta", "parcel",
-    "patrocinado", "promoc", "similar", "usado", "ver mais", "vendas",
+    "a partir de", "avaliac", "cashback", "compar", "cupom", "de volta",
+    "desconto", "devoluc", "economize", "em ate", "entrega", "estoque",
+    "frete", "gratis", "juros", "loja toda", "mes x", "no pix", "oferta",
+    "parcel", "patrocinado", "promoc", "similar", "usado", "ver mais",
+    "vendas", "vendido e entregue",
 )
+
+# Dominio do anuncio identifica o marketplace com certeza. O nome escrito no
+# card e menos confiavel: comparador exibe promocao no lugar do vendedor.
+MARKETPLACES = (
+    ("mercadolivre", "Mercado Livre"),
+    ("mercadolibre", "Mercado Livre"),
+    ("produto.mercadolivre", "Mercado Livre"),
+    ("shopee", "Shopee"),
+    ("amazon", "Amazon"),
+    ("magazineluiza", "Magalu"),
+    ("magalu", "Magalu"),
+    ("americanas", "Americanas"),
+    ("casasbahia", "Casas Bahia"),
+    ("pontofrio", "Ponto"),
+    ("leroymerlin", "Leroy Merlin"),
+    ("madeiramadeira", "MadeiraMadeira"),
+    ("lojadomecanico", "Loja do Mecanico"),
+    ("aliexpress", "AliExpress"),
+    ("shoptime", "Shoptime"),
+    ("carrefour", "Carrefour"),
+)
+
+
+def identificar_marketplace(url: str | None) -> str | None:
+    """Nome do marketplace a partir do dominio do anuncio."""
+    if not url:
+        return None
+    endereco = normalize_text(url)
+    for fragmento, nome in MARKETPLACES:
+        if fragmento in endereco:
+            return nome
+    return None
 SELLER_PREFIX = "vendido por"
 
 

@@ -92,3 +92,31 @@ class CookieImportTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MarketplaceTest(unittest.TestCase):
+    """Loja generica no card era promocao lida como vendedor."""
+
+    def test_cashback_line_is_not_a_store(self):
+        from copercitrus_price_collector.product_analysis import extract_seller
+
+        texto = "Lavadora\nR$ 900,00\n1% de volta na loja toda\nMagalu"
+
+        self.assertEqual("Magalu", extract_seller(texto))
+
+    def test_identifies_marketplace_by_domain(self):
+        from copercitrus_price_collector.product_analysis import identificar_marketplace
+
+        self.assertEqual(
+            "Mercado Livre",
+            identificar_marketplace("https://produto.mercadolivre.com.br/MLB-1"),
+        )
+        self.assertEqual(
+            "Shopee", identificar_marketplace("https://shopee.com.br/product/1/2")
+        )
+
+    def test_comparison_site_is_not_a_marketplace(self):
+        from copercitrus_price_collector.product_analysis import identificar_marketplace
+
+        self.assertIsNone(identificar_marketplace("https://www.buscape.com.br/lead?oid=1"))
+        self.assertIsNone(identificar_marketplace(None))

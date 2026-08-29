@@ -12,6 +12,7 @@ from ..product_analysis import (
     normalize_text,
     extract_package_quantity,
     extract_seller,
+    identificar_marketplace,
     identify_brand,
     parse_price,
     similarity_score,
@@ -42,7 +43,13 @@ def map_card(
         package_quantity=extract_package_quantity(combined_text),
         similarity_score=score,
         match_type=classify_match(score),
-        seller=card.seller or extract_seller(card.raw_text),
+        # Marketplace pelo dominio primeiro: e o dado confiavel. O texto do
+        # card vem depois, e so quando nao for promocao disfarcada de loja.
+        seller=(
+            identificar_marketplace(card.purchase_url)
+            or card.seller
+            or extract_seller(card.raw_text)
+        ),
         image_url=card.image_url,
     )
 
