@@ -18,7 +18,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     REQUEST_DELAY_SECONDS=4.0 \
     RPA_LOJAS_PREFERIDAS="mercado livre,shopee" \
     RPA_SOMENTE_EXATOS=true \
-    RPA_AGENDA_DIA=1
+    RPA_AGENDA_DIA=1 \n    DISPLAY=:99
 
 WORKDIR /app
 
@@ -38,6 +38,8 @@ RUN mkdir -p /dados
 
 EXPOSE 8000
 
-# xvfb-run cria o display virtual antes do servidor subir, para a coleta
-# disparada pela tela ou pela agenda encontrar um X disponivel.
-CMD ["xvfb-run", "-a", "--server-args=-screen 0 1440x1000x24", "copercitrus-web"]
+# O display virtual sobe em segundo plano e o servidor assume o processo
+# principal. Feito assim de proposito: com `xvfb-run` o container ficava preso
+# antes de abrir a porta, e uma falha do X derrubava o painel junto. Aqui, se
+# o X nao subir, o painel continua servindo e so a coleta fica indisponivel.
+CMD ["sh", "-c", "Xvfb :99 -screen 0 1440x1000x24 -nolisten tcp & export DISPLAY=:99; exec copercitrus-web"]
