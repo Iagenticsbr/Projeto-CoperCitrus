@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 
 from ..browser import BrowserRpa, SiteSelectors
 from ..models import ProductInput, SearchResult
-from .common import map_card
+from .common import buscar_em_lojas_preferidas
 
 
 GOOGLE_SELECTORS = SiteSelectors(
@@ -37,7 +37,16 @@ GOOGLE_SELECTORS = SiteSelectors(
         "span[aria-label*='R$']",
         "div[data-price]",
     ),
-    links=("a[href]", "a[href*='/shopping/product/']", "a[href*='/products/']"),
+    # Ordem importa: o primeiro seletor que casar vira o link de compra.
+    # O link organico da pagina do produto vem antes do anuncio, porque o
+    # destino do `aclk` so existe apos o clique — e clique em anuncio cobra
+    # o anunciante, entao o RPA nao segue esse redirecionamento.
+    links=(
+        "a[href*='/shopping/product/']",
+        "a[href*='/products/']",
+        "a[href*='/url?']",
+        "a[href]",
+    ),
     descriptions=(".vEjMR", ".sh-np__product-title", ".hP4iBf", ".b5YqMe"),
     sellers=(".aULzUe", ".IuHnof", ".sh-np__seller-container", "div[aria-label*='loja']"),
 )
@@ -50,15 +59,11 @@ class GoogleShoppingProvider:
     def __init__(self, browser: BrowserRpa) -> None:
         self.browser = browser
 
+    def _url(self, consulta: str) -> str:
+        params = {"tbm": "shop", "hl": "pt-BR", "gl": "br", "q": consulta}
+        return f"{self.endpoint}?{urlencode(params)}"
+
     def search(self, product: ProductInput, limit: int) -> list[SearchResult]:
-        params = {"tbm": "shop", "hl": "pt-BR", "gl": "br", "q": product.query}
-        cards = self.browser.collect_cards(
-            self.name,
-            f"{self.endpoint}?{urlencode(params)}",
-            GOOGLE_SELECTORS,
-            limit,
+        return buscar_em_lojas_preferidas(
+            self.browser, self.name, self._url, GOOGLE_SELECTORS, product, limit
         )
-        return [
-            map_card(self.name, product, card, index)
-            for index, card in enumerate(cards, 1)
-        ]

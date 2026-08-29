@@ -1,0 +1,24 @@
+# Credenciais e sessao: nunca sobem para o servidor. O painel hospedado nao
+# coleta — ele recebe resultado por POST /ingest — entao nada disso e usado la.
+cookies*.json
+sessao_*.json
+exported-cookies*.json
+.perfil-rpa/
+.chrome-rpa/
+.env
+
+# Dados locais e artefatos de execucao
+resultados/
+dados_web/
+dados/
+debug*/
+*.db
+*.xlsx
+*.log
+
+# Ambiente e cache
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.git/

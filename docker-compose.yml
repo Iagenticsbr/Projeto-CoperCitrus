@@ -1,0 +1,22 @@
+services:
+  rpa:
+    build: .
+    image: copercitrus-rpa
+    # O Chromium precisa de memoria compartilhada maior que o padrao de 64MB
+    # do Docker, senao a aba morre no meio da coleta.
+    ipc: host
+    volumes:
+      - ./dados:/dados
+    environment:
+      RPA_HEADLESS: "false"
+      REQUEST_DELAY_SECONDS: "3.0"
+      RESULT_LIMIT: "8"
+    command:
+      - collect
+      - /dados/produtos.xlsx
+      - --output
+      - /dados/precos_retail.xlsx
+      - --database
+      - /dados/precos.db
+      - --csv-dir
+      - /dados/csv

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import re
 import unicodedata
 from collections import defaultdict
@@ -13,6 +15,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
+from .database import RELEVANT_MATCHES
 from .errors import SpreadsheetError
 from .models import CollectionRow, ProductInput
 
@@ -27,7 +30,14 @@ HEADER_ALIASES = {
         "descricaoproduto",
     },
     "marca": {"marca", "fornecedor", "fabricante"},
-    "modelo": {"modelo"},
+    "modelo": {
+        "modelo",
+        "npecafabricante",
+        "nopecafabricante",
+        "numeropecafabricante",
+        "codigofabricante",
+        "referenciafabricante",
+    },
     "sku": {
         "sku",
         "material",
@@ -98,16 +108,39 @@ def _cell_text(value: object) -> str | None:
     return text or None
 
 
+def _read_csv_rows(source: Path) -> list[tuple]:
+    """Le CSV detectando separador e codificacao usuais no Brasil."""
+    texto = None
+    for codificacao in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            texto = source.read_text(encoding=codificacao)
+            break
+        except UnicodeDecodeError:
+            continue
+    if texto is None:
+        raise SpreadsheetError(f"Nao foi possivel ler {source.name}")
+    amostra = texto[:4096]
+    try:
+        dialeto = csv.Sniffer().sniff(amostra, delimiters=";,	|")
+        separador = dialeto.delimiter
+    except csv.Error:
+        # Exportacao brasileira usa ponto e virgula com muito mais frequencia.
+        separador = ";" if amostra.count(";") >= amostra.count(",") else ","
+    return [tuple(linha) for linha in csv.reader(io.StringIO(texto), delimiter=separador)]
+
+
 def read_products(
     path: str | Path,
     sheet_name: str | None = None,
     max_products: int = 1000,
 ) -> list[ProductInput]:
     source = Path(path)
-    if source.suffix.casefold() != ".xlsx":
-        raise SpreadsheetError("A entrada deve ser um arquivo .xlsx")
+    if source.suffix.casefold() not in {".xlsx", ".csv", ".txt"}:
+        raise SpreadsheetError("A entrada deve ser .xlsx ou .csv")
     if not source.is_file():
         raise SpreadsheetError(f"Planilha nao encontrada: {source}")
+    if source.suffix.casefold() in {".csv", ".txt"}:
+        return _products_from_rows(_read_csv_rows(source), source, max_products)
     if max_products < 1:
         raise SpreadsheetError("max_products deve ser maior que zero")
 
@@ -154,7 +187,7 @@ def read_products(
         for row_number, values in enumerate(
             sheet.iter_rows(min_row=header_row + 1, values_only=True),
             start=header_row + 1,
-        ):
+        ):  # noqa: E501
             produto = _value_at(values, indexes.get("produto"))
             marca = _value_at(values, indexes.get("marca"))
             modelo = _value_at(values, indexes.get("modelo"))
@@ -388,11 +421,14 @@ def _build_summary_sheet(workbook: Workbook, rows: list[CollectionRow]) -> None:
         grouped[(row.product.produto, row.product.sku)].append(row)
 
     for (product_name, sku), product_rows in grouped.items():
-        successes = [
+        priced = [
             row
             for row in product_rows
             if row.result is not None and row.result.price_min is not None
         ]
+        # Mesmo criterio da base de dados: acessorio nao define faixa de preco.
+        relevant = [row for row in priced if row.result.match_type in RELEVANT_MATCHES]
+        successes = relevant or priced
         cheapest = min(successes, key=lambda row: row.result.price_min) if successes else None
         expensive = max(successes, key=lambda row: row.result.price_min) if successes else None
         cheapest_result = cheapest.result if cheapest else None
@@ -437,3 +473,54 @@ def _build_summary_sheet(workbook: Workbook, rows: list[CollectionRow]) -> None:
             link_cell.hyperlink = str(link_cell.value)
             link_cell.style = "Hyperlink"
     _add_table(sheet, "ResumoRpa")
+
+
+def _products_from_rows(
+    rows: list[tuple], source: Path, max_products: int
+) -> list[ProductInput]:
+    """Converte linhas cruas (CSV) na mesma estrutura vinda do Excel."""
+    if not rows:
+        raise SpreadsheetError(f"O arquivo '{source.name}' esta vazio")
+
+    header_index = None
+    for index, values in enumerate(rows[:10]):
+        normalized = {_normalize_header(value) for value in values}
+        if normalized & HEADER_ALIASES["produto"]:
+            header_index = index
+            break
+    if header_index is None:
+        raise SpreadsheetError("Coluna obrigatoria 'Produto' nao encontrada")
+
+    normalized = [_normalize_header(value) for value in rows[header_index]]
+    indexes: dict[str, int] = {}
+    for canonical, aliases in HEADER_ALIASES.items():
+        for index, header in enumerate(normalized):
+            if header in aliases:
+                indexes[canonical] = index
+                break
+
+    products: list[ProductInput] = []
+    for row_number, values in enumerate(
+        rows[header_index + 1:], start=header_index + 2
+    ):
+        produto = _value_at(values, indexes.get("produto"))
+        marca = _value_at(values, indexes.get("marca"))
+        modelo = _value_at(values, indexes.get("modelo"))
+        sku = _value_at(values, indexes.get("sku"))
+        quantidade = _value_at(values, indexes.get("quantidade"))
+        if not any((produto, marca, modelo, sku, quantidade)):
+            continue
+        if not produto:
+            raise SpreadsheetError(f"Linha {row_number}: Produto esta vazio")
+        products.append(
+            ProductInput(row_number, produto, marca, modelo, sku, quantidade)
+        )
+        if len(products) > max_products:
+            raise SpreadsheetError(
+                f"O arquivo excede o limite de {max_products} produtos"
+            )
+    if not products:
+        raise SpreadsheetError(
+            f"O arquivo '{source.resolve()}' nao possui produtos preenchidos."
+        )
+    return products

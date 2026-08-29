@@ -17,17 +17,15 @@ class ProductInput:
 
     @property
     def query(self) -> str:
-        values = [self.produto, self.marca, self.modelo, self.sku]
-        seen: set[str] = set()
-        parts: list[str] = []
-        for value in values:
-            if not value:
-                continue
-            normalized = value.strip().casefold()
-            if normalized and normalized not in seen:
-                parts.append(value.strip())
-                seen.add(normalized)
-        return " ".join(parts)
+        """Consulta enviada ao marketplace.
+
+        O SKU interno da CoperCitrus nao entra na busca: e um codigo de
+        cadastro proprio que nao existe em nenhum anuncio publico e derruba
+        a pesquisa. Somente descricao, marca e codigo do fabricante entram.
+        """
+        from .product_analysis import build_search_terms
+
+        return build_search_terms(self.produto, self.marca, self.modelo)
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +47,8 @@ class SearchResult:
     review_count: int | None = None
     sold_count: int | None = None
     image_url: str | None = None
+    # Oferta vinda de marketplace priorizado pela CoperCitrus.
+    loja_preferida: bool = False
 
     @property
     def possible_similar(self) -> bool:

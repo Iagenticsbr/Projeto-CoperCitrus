@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-from ..browser import BrowserProductCard
+from ..browser import BrowserProductCard, BrowserRpa
+from dataclasses import replace
+
+from ..errors import ProviderError
 from ..models import ProductInput, SearchResult
 from ..product_analysis import (
     classify_match,
+    normalize_text,
     extract_package_quantity,
+    extract_seller,
     identify_brand,
     parse_price,
     similarity_score,
@@ -37,6 +42,65 @@ def map_card(
         package_quantity=extract_package_quantity(combined_text),
         similarity_score=score,
         match_type=classify_match(score),
-        seller=card.seller,
+        seller=card.seller or extract_seller(card.raw_text),
         image_url=card.image_url,
     )
+
+
+def marcar_preferidas(
+    resultados: list[SearchResult], preferidas: tuple[str, ...]
+) -> list[SearchResult]:
+    """Marca ofertas dos marketplaces priorizados e as coloca na frente."""
+    if not preferidas:
+        return resultados
+    alvos = [normalize_text(nome) for nome in preferidas if nome]
+    marcados: list[SearchResult] = []
+    for item in resultados:
+        texto = normalize_text(f"{item.seller or ''} {item.purchase_url}")
+        preferida = any(alvo and alvo in texto for alvo in alvos)
+        marcados.append(replace(item, loja_preferida=preferida) if preferida else item)
+    # Preferida primeiro, e dentro de cada grupo o mais barato antes.
+    return sorted(
+        marcados,
+        key=lambda item: (
+            not item.loja_preferida,
+            item.price_min if item.price_min is not None else float("inf"),
+        ),
+    )
+
+
+def buscar_em_lojas_preferidas(
+    browser: BrowserRpa,
+    provider_name: str,
+    montar_url,
+    selectors,
+    product: ProductInput,
+    limit: int,
+) -> list[SearchResult]:
+    """Consulta a busca geral e depois cada marketplace priorizado.
+
+    A consulta extra por loja existe porque a busca geral traz o que o
+    buscador julga relevante, e nao necessariamente o que a CoperCitrus quer
+    acompanhar. Perguntar pela loja diretamente e o que garante a cobertura.
+    """
+    preferidas = getattr(browser.settings, "lojas_preferidas", ())
+    consultas = [product.query] + [
+        f"{loja} {product.query}" for loja in preferidas
+    ]
+    vistos: set[str] = set()
+    resultados: list[SearchResult] = []
+    for consulta in consultas:
+        try:
+            cards = browser.collect_cards(
+                provider_name, montar_url(consulta), selectors, limit
+            )
+        except ProviderError:
+            # Uma loja sem resultado nao pode derrubar as demais consultas.
+            continue
+        for card in cards:
+            chave = f"{normalize_text(card.title)}|{card.price_text}"
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+            resultados.append(map_card(provider_name, product, card, len(resultados) + 1))
+    return marcar_preferidas(resultados, preferidas)

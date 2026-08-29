@@ -15,3 +15,9 @@ resultados/
 *.xls
 *.csv
 *.zip
+dados/
+.perfil-rpa/
+cookies*.json
+sessao_*.json
+resultados/debug/
+.chrome-rpa/

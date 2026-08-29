@@ -22,7 +22,8 @@ class SpreadsheetTest(unittest.TestCase):
 
             products = read_products(path)
 
-            self.assertEqual("Notebook Dell Inspiron 15 ABC-1", products[0].query)
+            self.assertEqual("Notebook Inspiron 15 Dell", products[0].query)
+            self.assertEqual("ABC-1", products[0].sku)
             self.assertEqual("25", products[0].quantidade_solicitada)
 
     def test_rejects_missing_product_header(self):

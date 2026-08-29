@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "./.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "copercitrus_price_collector.web:criar_app",
+        "--factory",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8077"
+      ],
+      "port": 8077
+    }
+  ]
+}

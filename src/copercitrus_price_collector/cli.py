@@ -6,7 +6,18 @@ from dataclasses import replace
 
 from .browser import BrowserRpa
 from .errors import ConfigurationError, PriceCollectorError
-from .providers import GoogleShoppingProvider, PriceProvider, ShopeeProvider
+from .database import export_csv, export_database
+from .dashboard import render_dashboard
+from .historico import append_run
+from .publicar import publicar
+from .providers import (
+    BingShoppingProvider,
+    BuscapeProvider,
+    GoogleShoppingProvider,
+    PriceProvider,
+    ShopeeProvider,
+    ZoomProvider,
+)
 from .service import CollectionService
 from .settings import Settings
 from .spreadsheet import create_template, export_results, read_products
@@ -22,18 +33,63 @@ def _parser() -> argparse.ArgumentParser:
     template = subcommands.add_parser("template", help="cria uma planilha-modelo")
     template.add_argument("output", nargs="?", default="produtos.xlsx")
 
+    painel = subcommands.add_parser(
+        "dashboard", help="gera o painel HTML a partir da base coletada"
+    )
+    painel.add_argument("--database", default="resultados/precos.db")
+    painel.add_argument("--historico", default="resultados/historico.db")
+    painel.add_argument("--output", default="resultados/dashboard.html")
+
+    envio = subcommands.add_parser(
+        "publicar", help="envia a base coletada para a instancia hospedada"
+    )
+    envio.add_argument("url", help="endereco da aplicacao, por exemplo https://app.up.railway.app")
+    envio.add_argument("--database", default="resultados/precos.db")
+    envio.add_argument("--token", help="valor de RPA_INGEST_TOKEN configurado no servidor")
+
+    login = subcommands.add_parser(
+        "login",
+        help="abre a fonte para voce entrar na sua conta e salva a sessao",
+    )
+    login.add_argument("fonte", choices=sorted(LOGIN_URLS))
+    login.add_argument("--storage-state", required=True)
+    login.add_argument("--wait-seconds", type=float, default=300.0)
+    login.add_argument("--browser-channel", choices=("chrome", "msedge"))
+
     collect = subcommands.add_parser("collect", help="processa uma planilha via browser")
     collect.add_argument("input")
     collect.add_argument("--output", default="resultados/precos.xlsx")
     collect.add_argument("--sheet")
-    collect.add_argument("--providers", default="google,shopee")
+    collect.add_argument(
+        "--providers",
+        default="buscape,zoom,bing",
+        help="fontes separadas por virgula: buscape, zoom, bing, google, shopee",
+    )
+    collect.add_argument(
+        "--database",
+        default="resultados/precos.db",
+        help="SQLite gerado para alimentar o dashboard",
+    )
+    collect.add_argument(
+        "--csv-dir",
+        default="resultados/csv",
+        help="pasta dos CSV de ofertas e resumo",
+    )
     collect.add_argument("--limit", type=int)
     collect.add_argument("--max-products", type=int, default=1000)
     collect.add_argument("--delay", type=float)
     collect.add_argument(
         "--headed",
         action="store_true",
-        help="exibe o Chromium durante a execucao",
+        help="exibe o Chromium durante a execucao (padrao)",
+    )
+    collect.add_argument(
+        "--headless",
+        action="store_true",
+        help=(
+            "executa sem janela; os comparadores recusam o Chromium headless, "
+            "use apenas com --browser-cdp-url"
+        ),
     )
     collect.add_argument(
         "--browser-channel",
@@ -45,21 +101,69 @@ def _parser() -> argparse.ArgumentParser:
         help="usa um perfil persistente do navegador e preserva a sessao local",
     )
     collect.add_argument(
+        "--manual-verification-seconds",
+        type=float,
+        help=(
+            "tempo de espera para um humano concluir a verificacao da fonte "
+            "na janela do navegador; 0 desativa a espera"
+        ),
+    )
+    collect.add_argument(
+        "--historico",
+        default="resultados/historico.db",
+        help=(
+            "base que acumula as execucoes e sustenta a analise de evolucao; "
+            "vazio desativa o registro"
+        ),
+    )
+    collect.add_argument(
+        "--cookies",
+        help=(
+            "JSON de cookies exportado do navegador (extensao Cookie-Editor) "
+            "ou storage_state do Playwright"
+        ),
+    )
+    collect.add_argument(
+        "--storage-state",
+        help=(
+            "arquivo de cookies e sessao: carrega no inicio e regrava ao fim, "
+            "para login e verificacao nao serem refeitos a cada execucao"
+        ),
+    )
+    collect.add_argument(
+        "--debug-dump-dir",
+        help="salva HTML e captura da pagina quando nenhuma oferta e reconhecida",
+    )
+    collect.add_argument(
         "--browser-cdp-url",
         help="conecta a um Chrome ja aberto com depuracao remota, por exemplo http://127.0.0.1:9222",
     )
     return parser
 
 
+LOGIN_URLS = {
+    "shopee": "https://shopee.com.br/buyer/login",
+    "google": "https://accounts.google.com/",
+}
+
+PROVIDER_FACTORIES = {
+    "buscape": BuscapeProvider,
+    "zoom": ZoomProvider,
+    "bing": BingShoppingProvider,
+    "google": GoogleShoppingProvider,
+    "shopee": ShopeeProvider,
+}
+
+
 def _build_providers(selected: list[str], browser: BrowserRpa) -> list[PriceProvider]:
-    providers: list[PriceProvider] = []
-    unknown = sorted(set(selected) - {"google", "shopee"})
+    unknown = sorted(set(selected) - set(PROVIDER_FACTORIES))
     if unknown:
         raise ConfigurationError(f"Fonte desconhecida: {', '.join(unknown)}")
-    if "google" in selected:
-        providers.append(GoogleShoppingProvider(browser))
-    if "shopee" in selected:
-        providers.append(ShopeeProvider(browser))
+    providers: list[PriceProvider] = [
+        PROVIDER_FACTORIES[name](browser)
+        for name in PROVIDER_FACTORIES
+        if name in selected
+    ]
     if not providers:
         raise ConfigurationError("Selecione ao menos uma fonte")
     return providers
@@ -76,9 +180,42 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Planilha-modelo criada: {destination}")
             return 0
 
+        if args.command == "publicar":
+            resposta = publicar(args.database, args.url, args.token)
+            print(
+                f"Publicado: {resposta.get('recebidas')} ofertas enviadas, "
+                f"{resposta.get('novas')} novas apos deduplicacao."
+            )
+            return 0
+
+        if args.command == "dashboard":
+            destino = render_dashboard(
+                args.database, args.output, args.historico or None
+            )
+            print(f"Dashboard gerado: {destino.resolve()}")
+            return 0
+
+        if args.command == "login":
+            settings = replace(
+                Settings.from_env(),
+                headless=False,
+                storage_state_path=args.storage_state,
+            )
+            if args.browser_channel:
+                settings = replace(settings, browser_channel=args.browser_channel)
+            with BrowserRpa(settings) as browser:
+                ok = browser.authenticate(
+                    LOGIN_URLS[args.fonte], args.wait_seconds
+                )
+            return 0 if ok else 1
+
         settings = Settings.from_env()
+        if args.headed and args.headless:
+            raise ConfigurationError("Use --headed ou --headless, nao os dois")
         if args.headed:
             settings = replace(settings, headless=False)
+        if args.headless:
+            settings = replace(settings, headless=True)
         if args.browser_channel:
             settings = replace(settings, browser_channel=args.browser_channel)
         if args.browser_user_data_dir:
@@ -87,6 +224,21 @@ def main(argv: list[str] | None = None) -> int:
             )
         if args.browser_cdp_url:
             settings = replace(settings, browser_cdp_url=args.browser_cdp_url)
+        if args.cookies:
+            settings = replace(settings, cookies_path=args.cookies)
+        if args.storage_state:
+            settings = replace(settings, storage_state_path=args.storage_state)
+        if args.debug_dump_dir:
+            settings = replace(settings, debug_dump_dir=args.debug_dump_dir)
+        if args.manual_verification_seconds is not None:
+            if args.manual_verification_seconds < 0:
+                raise ConfigurationError(
+                    "--manual-verification-seconds nao pode ser negativo"
+                )
+            settings = replace(
+                settings,
+                manual_verification_seconds=args.manual_verification_seconds,
+            )
 
         selected = [
             item.strip().casefold() for item in args.providers.split(",") if item.strip()
@@ -108,6 +260,12 @@ def main(argv: list[str] | None = None) -> int:
             rows = CollectionService(providers, limit, delay).collect(products)
 
         destination = export_results(rows, args.output)
+        database = export_database(rows, args.database)
+        csv_files = export_csv(rows, args.csv_dir)
+        historico = None
+        if args.historico:
+            append_run(rows, args.historico, args.input, args.providers)
+            historico = args.historico
         offers = sum(1 for row in rows if row.status == "OK")
         similars = sum(
             1
@@ -117,8 +275,13 @@ def main(argv: list[str] | None = None) -> int:
         errors = sum(1 for row in rows if row.status == "ERRO")
         print(
             f"Concluido: {len(products)} produtos, {offers} ofertas, "
-            f"{similars} similares e {errors} erros. Arquivo: {destination}"
+            f"{similars} similares e {errors} erros."
         )
+        print(f"Excel: {destination}")
+        print(f"Base de dados: {database}")
+        print(f"CSV: {', '.join(str(item) for item in csv_files)}")
+        if historico:
+            print(f"Historico acumulado: {historico}")
         return 0 if not errors else 1
     except KeyboardInterrupt:
         print("Coleta interrompida pelo usuario.", file=sys.stderr)

@@ -1,43 +1,98 @@
 import unittest
 
-from copercitrus_price_collector.browser import BrowserProductCard
 from copercitrus_price_collector.models import ProductInput
 from copercitrus_price_collector.providers.shopee_affiliate import ShopeeProvider
 
 
 class FakeBrowser:
-    def __init__(self, cards):
-        self.cards = cards
-        self.url = None
+    def __init__(self, body):
+        self.body = body
+        self.calls = []
 
-    def collect_cards(self, provider_name, url, selectors, limit):
-        self.url = url
-        return self.cards[:limit]
+    def fetch_json(self, provider_name, page_url, api_path):
+        self.calls.append((provider_name, page_url, api_path))
+        return self.body
+
+
+# Resposta reduzida no formato que a busca da Shopee devolve. Os valores
+# monetarios chegam multiplicados por 100000.
+BODY = {
+    "items": [
+        {
+            "item_basic": {
+                "itemid": 123,
+                "shopid": 456,
+                "name": "Lavadora Alta Pressao Jacto J6600 220V",
+                "price": 99900000,
+                "price_min": 89900000,
+                "price_max": 129900000,
+                "historical_sold": 42,
+                "item_rating": {"rating_star": 4.8123, "rating_count": [17, 1, 0]},
+                "images": ["abc123"],
+                "shop_location": "SP",
+            }
+        },
+        {
+            "item_basic": {
+                "itemid": 789,
+                "shopid": 456,
+                "name": "",
+                "price": 1000000,
+            }
+        },
+    ]
+}
 
 
 class ShopeeProviderTest(unittest.TestCase):
-    def test_uses_public_search_page_and_classifies_similar_product(self):
-        browser = FakeBrowser(
-            [
-                BrowserProductCard(
-                    title="Furadeira parafusadeira Bosch GSB 12V",
-                    price_text="R$ 499,00",
-                    purchase_url="https://shopee.com.br/product/1/2",
-                    seller="Loja Oficial",
-                )
-            ]
-        )
-        provider = ShopeeProvider(browser)
-
-        results = provider.search(
-            ProductInput(2, "Parafusadeira", "Bosch", "GSR 12V"), 3
+    def setUp(self):
+        self.product = ProductInput(
+            4, "LAVADORA ALTA PRESSAO J6600 220V", "Jacto", "1350780 JACTO", "1271265"
         )
 
-        self.assertEqual(499.0, results[0].price_min)
-        self.assertEqual("Bosch", results[0].brand)
-        self.assertEqual("SIMILAR", results[0].match_type)
-        self.assertTrue(results[0].possible_similar)
-        self.assertIn("shopee.com.br/search?keyword=", browser.url)
+    def test_reads_price_range_from_the_search_api(self):
+        browser = FakeBrowser(BODY)
+
+        results = ShopeeProvider(browser).search(self.product, 5)
+
+        self.assertEqual(1, len(results))
+        offer = results[0]
+        self.assertEqual(899.0, offer.price_min)
+        self.assertEqual(1299.0, offer.price_max)
+        self.assertEqual("BRL", offer.currency)
+        self.assertEqual("https://shopee.com.br/product/456/123", offer.purchase_url)
+        self.assertEqual(42, offer.sold_count)
+        self.assertEqual(4.81, offer.rating)
+        self.assertEqual(17, offer.review_count)
+        self.assertIn("abc123", offer.image_url)
+
+    def test_searches_by_keyword_built_from_the_spreadsheet(self):
+        browser = FakeBrowser(BODY)
+
+        ShopeeProvider(browser).search(self.product, 5)
+
+        _, page_url, api_path = browser.calls[0]
+        self.assertIn("/search?keyword=", page_url)
+        self.assertIn("page_type=search", api_path)
+        self.assertIn("scenario=PAGE_GLOBAL_SEARCH", api_path)
+        self.assertIn("J6600", api_path)
+        # O codigo interno da CoperCitrus nao vai para a busca publica.
+        self.assertNotIn("1271265", api_path)
+
+    def test_skips_entries_without_a_name(self):
+        results = ShopeeProvider(FakeBrowser(BODY)).search(self.product, 5)
+
+        self.assertTrue(all(offer.title for offer in results))
+
+    def test_empty_response_yields_no_offers(self):
+        self.assertEqual([], ShopeeProvider(FakeBrowser({})).search(self.product, 5))
+
+    def test_respects_the_limit(self):
+        body = {"items": BODY["items"] * 5}
+
+        results = ShopeeProvider(FakeBrowser(body)).search(self.product, 3)
+
+        self.assertLessEqual(len(results), 3)
 
 
 if __name__ == "__main__":

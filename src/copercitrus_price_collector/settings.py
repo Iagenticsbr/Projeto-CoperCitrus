@@ -50,11 +50,16 @@ class Settings:
     slow_mo_ms: int
     request_delay_seconds: float
     result_limit: int
+    manual_verification_seconds: float
+    debug_dump_dir: str | None
+    storage_state_path: str | None
+    cookies_path: str | None
+    lojas_preferidas: tuple[str, ...]
 
     @classmethod
     def from_env(cls) -> Settings:
         settings = cls(
-            headless=_bool_env("RPA_HEADLESS", True),
+            headless=_bool_env("RPA_HEADLESS", False),
             browser_channel=os.getenv("RPA_BROWSER_CHANNEL") or None,
             browser_user_data_dir=os.getenv("RPA_BROWSER_USER_DATA_DIR") or None,
             browser_cdp_url=os.getenv("RPA_BROWSER_CDP_URL") or None,
@@ -62,6 +67,20 @@ class Settings:
             slow_mo_ms=_int_env("RPA_SLOW_MO_MS", 0),
             request_delay_seconds=_float_env("REQUEST_DELAY_SECONDS", 2.0),
             result_limit=_int_env("RESULT_LIMIT", 5),
+            manual_verification_seconds=_float_env(
+                "RPA_MANUAL_VERIFICATION_SECONDS", 180.0
+            ),
+            debug_dump_dir=os.getenv("RPA_DEBUG_DUMP_DIR") or None,
+            storage_state_path=os.getenv("RPA_STORAGE_STATE") or None,
+            cookies_path=os.getenv("RPA_COOKIES_FILE") or None,
+            # Marketplaces priorizados na busca e na ordenacao dos resultados.
+            lojas_preferidas=tuple(
+                item.strip()
+                for item in os.getenv(
+                    "RPA_LOJAS_PREFERIDAS", "mercado livre,shopee"
+                ).split(",")
+                if item.strip()
+            ),
         )
         if settings.browser_timeout_seconds <= 0:
             raise ConfigurationError(
@@ -71,6 +90,10 @@ class Settings:
             raise ConfigurationError("RPA_SLOW_MO_MS nao pode ser negativo")
         if settings.request_delay_seconds < 0:
             raise ConfigurationError("REQUEST_DELAY_SECONDS nao pode ser negativo")
+        if settings.manual_verification_seconds < 0:
+            raise ConfigurationError(
+                "RPA_MANUAL_VERIFICATION_SECONDS nao pode ser negativo"
+            )
         if not 1 <= settings.result_limit <= 20:
             raise ConfigurationError("RESULT_LIMIT deve estar entre 1 e 20")
         return settings

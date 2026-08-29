@@ -15,8 +15,16 @@ dependencies = [
   "playwright==1.61.0",
 ]
 
+[project.optional-dependencies]
+web = [
+  "fastapi>=0.115,<1",
+  "python-multipart>=0.0.9",
+  "uvicorn[standard]>=0.32,<1",
+]
+
 [project.scripts]
 copercitrus-price = "copercitrus_price_collector.cli:main"
+copercitrus-web = "copercitrus_price_collector.web:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
