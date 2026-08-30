@@ -20,6 +20,7 @@ class CollectionService:
         sleeper: Callable[[float], None] = time.sleep,
         somente_exatos: bool = False,
         similaridade_minima: float = 70.0,
+        somente_lojas_preferidas: bool = False,
     ) -> None:
         self.providers = list(providers)
         self.result_limit = result_limit
@@ -27,6 +28,7 @@ class CollectionService:
         self.sleeper = sleeper
         self.somente_exatos = somente_exatos
         self.similaridade_minima = similaridade_minima
+        self.somente_lojas_preferidas = somente_lojas_preferidas
 
     def _filtrar(self, results: list) -> list:
         """Descarta o que nao e o produto pedido.
@@ -35,13 +37,18 @@ class CollectionService:
         voltagem, kit com acessorio. Para comparar preco do mesmo item, isso
         e ruido, nao alternativa.
         """
-        if not self.somente_exatos:
-            return results
-        return [
-            item
-            for item in results
-            if item.similarity_score >= self.similaridade_minima
-        ]
+        if self.somente_exatos:
+            results = [
+                item
+                for item in results
+                if item.similarity_score >= self.similaridade_minima
+            ]
+        if self.somente_lojas_preferidas:
+            # Só os marketplaces escolhidos entram na base. Comparador e loja
+            # avulsa saem, mesmo quando o preco e bom: o pedido e acompanhar
+            # esses canais especificamente.
+            results = [item for item in results if item.loja_preferida]
+        return results
 
     def collect(self, products: Iterable[ProductInput]) -> list[CollectionRow]:
         rows: list[CollectionRow] = []
@@ -88,9 +95,14 @@ class CollectionService:
                 if not results:
                     if brutos:
                         melhor = max(item.similarity_score for item in provider_results)
+                        lojas = sorted(
+                            {item.seller for item in provider_results if item.seller}
+                        )
                         print(
-                            f"        {brutos} ofertas encontradas, nenhuma exata "
-                            f"(melhor similaridade {melhor:.0f}%)",
+                            f"        {brutos} ofertas descartadas "
+                            f"(melhor similaridade {melhor:.0f}%"
+                            + (f", lojas: {', '.join(lojas[:4])}" if lojas else "")
+                            + ")",
                             flush=True,
                         )
                     else:

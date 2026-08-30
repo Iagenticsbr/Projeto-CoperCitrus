@@ -56,6 +56,8 @@ class Settings:
     cookies_path: str | None
     lojas_preferidas: tuple[str, ...]
     somente_exatos: bool
+    somente_lojas_preferidas: bool
+    apify_token: str | None
     similaridade_minima: float
 
     @classmethod
@@ -85,6 +87,11 @@ class Settings:
             ),
             # Exige o produto pedido, nao um parente dele.
             somente_exatos=_bool_env("RPA_SOMENTE_EXATOS", True),
+            # Restringe a base as lojas de RPA_LOJAS_PREFERIDAS.
+            somente_lojas_preferidas=_bool_env(
+                "RPA_SOMENTE_LOJAS_PREFERIDAS", False
+            ),
+            apify_token=os.getenv("APIFY_TOKEN") or None,
             similaridade_minima=_float_env("RPA_SIMILARIDADE_MINIMA", 70.0),
         )
         if settings.browser_timeout_seconds <= 0:

@@ -1,4 +1,10 @@
-"""RPA da busca da Shopee Brasil pela API JSON da propria pagina.
+"""Shopee pela vitrine, com navegador.
+
+Mantida como alternativa: a Shopee bloqueia esse caminho de forma
+consistente. Prefira `providers.shopee`, que usa API.
+
+Original:
+RPA da busca da Shopee Brasil pela API JSON da propria pagina.
 
 A pesquisa e feita pelo endpoint publico que a propria vitrine consome, a
 partir da pagina ja aberta e com a sessao do navegador. E mais estavel do que
@@ -52,7 +58,7 @@ def _rating(item: dict) -> tuple[float | None, int | None]:
     return stars, total
 
 
-class ShopeeProvider:
+class ShopeeWebProvider:
     name = "Shopee"
 
     def __init__(self, browser: BrowserRpa) -> None:

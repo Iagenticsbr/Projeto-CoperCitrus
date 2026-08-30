@@ -127,6 +127,7 @@ def executar_coleta(execucao: Execucao, caminho: Path, fontes: str, limite: int)
                 configuracao.request_delay_seconds,
                 somente_exatos=configuracao.somente_exatos,
                 similaridade_minima=configuracao.similaridade_minima,
+                somente_lojas_preferidas=configuracao.somente_lojas_preferidas,
             )
             linhas = servico.collect(produtos)
 
@@ -344,6 +345,15 @@ def _ingerir_ofertas(ofertas: list[dict], planilha: str | None) -> int:
     HISTORICO.parent.mkdir(parents=True, exist_ok=True)
     momento = datetime.utcnow().replace(microsecond=0).isoformat()
     dia = momento[:10]
+    # Piso de plausibilidade tambem na entrada: coleta feita antes da correcao,
+    # ou vinda de outra maquina, nao pode contaminar o painel com R$ 0,01.
+    ofertas = [
+        item
+        for item in ofertas
+        if isinstance(item.get("preco"), (int, float)) and item["preco"] >= 1.0
+    ]
+    if not ofertas:
+        raise HTTPException(400, "Nenhuma oferta com preco plausivel")
     conexao = sqlite3.connect(HISTORICO)
     try:
         conexao.executescript(SCHEMA)
@@ -363,7 +373,8 @@ def _ingerir_ofertas(ofertas: list[dict], planilha: str | None) -> int:
         conexao.executemany(
             "INSERT OR IGNORE INTO historico_ofertas (execucao_id, coletado_em, dia,"
             " sku, produto, marca, fonte, loja, titulo, preco, classificacao,"
-            " similaridade, url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " similaridade, loja_preferida, url)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     execucao_id,
@@ -378,6 +389,7 @@ def _ingerir_ofertas(ofertas: list[dict], planilha: str | None) -> int:
                     item.get("preco"),
                     item.get("classificacao"),
                     item.get("similaridade"),
+                    int(bool(item.get("loja_preferida"))),
                     item.get("url"),
                 )
                 for item in ofertas

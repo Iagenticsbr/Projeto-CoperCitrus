@@ -36,12 +36,13 @@ def carregar_ofertas(database: str | Path) -> list[dict]:
                 "preco": linha["preco"],
                 "classificacao": linha["classificacao"],
                 "similaridade": linha["similaridade"],
+                "loja_preferida": linha["loja_preferida"],
                 "url": linha["url"],
             }
             for linha in conexao.execute(
                 "SELECT sku, produto, marca_encontrada, fonte, loja, titulo, "
-                "preco, classificacao, similaridade, url FROM ofertas "
-                "WHERE preco IS NOT NULL"
+                "preco, classificacao, similaridade, loja_preferida, url "
+                "FROM ofertas WHERE preco IS NOT NULL"
             )
         ]
     finally:

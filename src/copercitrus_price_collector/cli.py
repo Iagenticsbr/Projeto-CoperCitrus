@@ -14,8 +14,10 @@ from .providers import (
     BingShoppingProvider,
     BuscapeProvider,
     GoogleShoppingProvider,
+    MercadoLivreProvider,
     PriceProvider,
     ShopeeProvider,
+    ShopeeWebProvider,
     ZoomProvider,
 )
 from .service import CollectionService
@@ -68,7 +70,10 @@ def _parser() -> argparse.ArgumentParser:
     collect.add_argument(
         "--providers",
         default="buscape,zoom,bing",
-        help="fontes separadas por virgula: buscape, zoom, bing, google, shopee",
+        help=(
+            "fontes separadas por virgula: mercadolivre, shopee, buscape, "
+            "zoom, bing, google, shopee-web"
+        ),
     )
     collect.add_argument(
         "--database",
@@ -137,6 +142,15 @@ def _parser() -> argparse.ArgumentParser:
         help="corte de similaridade do modo exato, de 0 a 100 (padrao 80)",
     )
     collect.add_argument(
+        "--somente-lojas-preferidas",
+        action="store_true",
+        help="mantem na base apenas as lojas de --lojas-preferidas",
+    )
+    collect.add_argument(
+        "--lojas-preferidas",
+        help="lista separada por virgula, por exemplo: mercado livre,shopee",
+    )
+    collect.add_argument(
         "--cookies",
         help=(
             "JSON de cookies exportado do navegador (extensao Cookie-Editor) "
@@ -167,11 +181,13 @@ LOGIN_URLS = {
 }
 
 PROVIDER_FACTORIES = {
+    "mercadolivre": MercadoLivreProvider,
+    "shopee": ShopeeProvider,
     "buscape": BuscapeProvider,
     "zoom": ZoomProvider,
     "bing": BingShoppingProvider,
     "google": GoogleShoppingProvider,
-    "shopee": ShopeeProvider,
+    "shopee-web": ShopeeWebProvider,
 }
 
 
@@ -285,21 +301,44 @@ def main(argv: list[str] | None = None) -> int:
             settings = replace(settings, somente_exatos=False)
         if args.somente_exatos:
             settings = replace(settings, somente_exatos=True)
+        if args.lojas_preferidas:
+            settings = replace(
+                settings,
+                lojas_preferidas=tuple(
+                    item.strip()
+                    for item in args.lojas_preferidas.split(",")
+                    if item.strip()
+                ),
+            )
+        if args.somente_lojas_preferidas:
+            settings = replace(settings, somente_lojas_preferidas=True)
         if args.similaridade_minima is not None:
             settings = replace(
                 settings, similaridade_minima=args.similaridade_minima
             )
 
         products = read_products(args.input, args.sheet, args.max_products)
-        with BrowserRpa(settings) as browser:
-            providers = _build_providers(selected, browser)
+        browser = BrowserRpa(settings)
+        providers = _build_providers(selected, browser)
+        # Fonte de API nao abre navegador; subir o Chromium a toa custa tempo
+        # e impede rodar em servidor sem tela.
+        precisa_navegador = any(
+            getattr(item, "requires_browser", True) for item in providers
+        )
+        try:
+            if precisa_navegador:
+                browser.start()
             rows = CollectionService(
                 providers,
                 limit,
                 delay,
                 somente_exatos=settings.somente_exatos,
                 similaridade_minima=settings.similaridade_minima,
+                somente_lojas_preferidas=settings.somente_lojas_preferidas,
             ).collect(products)
+        finally:
+            if precisa_navegador:
+                browser.close()
 
         destination = export_results(rows, args.output)
         database = export_database(rows, args.database)

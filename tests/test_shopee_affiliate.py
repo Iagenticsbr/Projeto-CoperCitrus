@@ -1,7 +1,7 @@
 import unittest
 
 from copercitrus_price_collector.models import ProductInput
-from copercitrus_price_collector.providers.shopee_affiliate import ShopeeProvider
+from copercitrus_price_collector.providers.shopee_affiliate import ShopeeWebProvider as ShopeeProvider
 
 
 class FakeBrowser:
