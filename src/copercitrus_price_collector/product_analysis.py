@@ -166,6 +166,22 @@ MARKETPLACES = (
 )
 
 
+def normalizar_loja(nome: str | None) -> str | None:
+    """Reduz o vendedor ao nome do marketplace.
+
+    O anuncio traz "Mercado Livre (JACTO por Magazine Brasileiro Loja
+    oficial)", que fragmenta o mesmo canal em dezenas de rotulos e torna
+    qualquer agregacao por loja inutil. O que interessa e o canal.
+    """
+    if not nome:
+        return None
+    normalizado = normalize_text(nome)
+    for _, marketplace in MARKETPLACES:
+        if normalize_text(marketplace) in normalizado:
+            return marketplace
+    return nome.strip() or None
+
+
 def identificar_marketplace(url: str | None) -> str | None:
     """Nome do marketplace a partir do dominio do anuncio."""
     if not url:
@@ -319,6 +335,18 @@ def similarity_score(product: ProductInput, found_title: str) -> float:
 
     requested_tokens = set(match_tokens(requested))
     found_tokens = set(match_tokens(found_title))
+    # Codigo de cadastro do fabricante (so digitos, longo) nao aparece no
+    # titulo do anuncio: nenhum vendedor escreve "6878125125". Mantido na
+    # cobertura, ele punia justamente o produto certo. Codigo de modelo
+    # alfanumerico (IM125, J6600, DWE4120B2B) continua contando, porque esse
+    # o anuncio escreve.
+    descritivos = {
+        token
+        for token in requested_tokens
+        if not (token.isdigit() and len(token) >= 6)
+    }
+    if descritivos:
+        requested_tokens = descritivos
     if not requested_tokens:
         return 0.0
 

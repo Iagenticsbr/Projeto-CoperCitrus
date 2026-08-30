@@ -225,3 +225,72 @@ class LojasPreferidasTest(unittest.TestCase):
         )
 
         self.assertFalse(marcar_preferidas([oferta], ("shopee",))[0].loja_preferida)
+
+
+class FalhaTotalTest(unittest.TestCase):
+    """Bloqueio em todas as consultas e erro, nao mercado vazio."""
+
+    class BrowserQueFalha:
+        def __init__(self):
+            from copercitrus_price_collector.errors import ProviderError
+
+            self.erro = ProviderError("Google Shopping: bloqueio detectado")
+            self.settings = ConfiguracaoFalsa()
+
+        def collect_cards(self, *args, **kwargs):
+            raise self.erro
+
+    def test_all_queries_blocked_raises(self):
+        from copercitrus_price_collector.errors import ProviderError
+
+        product = ProductInput(4, "Lavadora alta pressao", "Jacto")
+
+        with self.assertRaises(ProviderError):
+            BingShoppingProvider(self.BrowserQueFalha()).search(product, 5)
+
+    def test_partial_failure_keeps_what_worked(self):
+        class BrowserParcial:
+            def __init__(self):
+                from copercitrus_price_collector.errors import ProviderError
+
+                self.ProviderError = ProviderError
+                self.settings = ConfiguracaoFalsa()
+                self.chamadas = 0
+
+            def collect_cards(self, *args, **kwargs):
+                self.chamadas += 1
+                if self.chamadas == 1:
+                    return [CARD]
+                raise self.ProviderError("bloqueio")
+
+        product = ProductInput(4, "Lavadora alta pressao", "Jacto")
+
+        ofertas = BingShoppingProvider(BrowserParcial()).search(product, 5)
+
+        self.assertEqual(1, len(ofertas))
+
+
+class CodigoFabricanteTest(unittest.TestCase):
+    """Codigo de cadastro nao aparece em anuncio e nao pode punir o acerto."""
+
+    def test_supplier_code_does_not_lower_the_match(self):
+        com_codigo = ProductInput(
+            4, "INVERSOR DIG C/MASCARA AUT IM125 VD", "Vonder", "6878125125 VONDER"
+        )
+        titulo = "Inversor Solda Eletrodo E TIG IM125 Com Mascara Vonder"
+
+        self.assertGreaterEqual(similarity_score(com_codigo, titulo), 60.0)
+
+    def test_model_code_still_counts(self):
+        """IM125 e J6600 o anuncio escreve; esses continuam valendo."""
+        produto = ProductInput(4, "LAVADORA ALTA PRESSAO J6600", "Jacto")
+
+        com_modelo = similarity_score(produto, "Lavadora Alta Pressao Jacto J6600 220v")
+        sem_modelo = similarity_score(produto, "Lavadora Alta Pressao Jacto J7000 220v")
+
+        self.assertGreater(com_modelo, sem_modelo)
+
+    def test_accessory_stays_low_even_without_the_code(self):
+        produto = ProductInput(4, "PULVERIZADOR COSTAL PJH", "Jacto", "825398 JACTO")
+
+        self.assertLess(similarity_score(produto, "Filtro Oleo Jacto"), 50.0)

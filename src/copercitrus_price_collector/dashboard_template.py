@@ -202,12 +202,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   <section class="painel" id="p-loja" hidden>
     <div class="grade">
-      <div class="bloco">
-        <h2>Lojas por volume de ofertas</h2>
-        <div class="legenda">Quem mais aparece nas buscas.</div>
-        <div id="g-loja"></div>
-      </div>
-      <div class="bloco">
+      <div class="bloco largo">
         <h2>Posição frente à mediana</h2>
         <div class="legenda">Verde indica loja abaixo do mercado. Vermelho, acima.</div>
         <div class="rolagem"><table id="t-loja"></table></div>
@@ -423,8 +418,6 @@ function render() {
       return {loja,...e,preferida:itens.some(i=>i.loja_preferida),
               vs:medianaGeral?(e.min-medianaGeral)/medianaGeral*100:0}; })
     .sort((a,b)=>(b.preferida?1:0)-(a.preferida?1:0)||b.n-a.n);
-  document.getElementById("g-loja").innerHTML =
-    barras(listaLojas.slice(0,14).map(l=>({rotulo:l.loja,valor:l.n})),v=>`${v}`,"#2fd6a0");
   tabela("t-loja",[
     {titulo:"#",valor:(l,i)=>`<span class="posicao ${i<3?'top':''}">${i+1}</span>`},
     {titulo:"Loja",valor:l=>l.preferida

@@ -36,6 +36,7 @@ from .dashboard import HTML_TEMPLATE, collect_dashboard_data
 from .database import export_csv, export_database
 from .errors import ConfigurationError, PriceCollectorError
 from .historico import append_run
+from .product_analysis import normalizar_loja
 from .spreadsheet import export_results, read_products
 
 
@@ -384,7 +385,7 @@ def _ingerir_ofertas(ofertas: list[dict], planilha: str | None) -> int:
                     item.get("produto") or "",
                     item.get("marca"),
                     item.get("fonte") or "ingestao",
-                    item.get("loja"),
+                    normalizar_loja(item.get("loja")),
                     item.get("titulo"),
                     item.get("preco"),
                     item.get("classificacao"),

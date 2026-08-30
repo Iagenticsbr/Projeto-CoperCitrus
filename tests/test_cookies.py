@@ -138,3 +138,20 @@ class MarketplaceTest(unittest.TestCase):
             "Lojas Americanas",
             extract_seller("Lavadora\nR$ 900,00\nLojas Americanas"),
         )
+
+
+    def test_normalizes_reseller_into_the_marketplace(self):
+        """Dezenas de rotulos do mesmo canal tornam a agregacao inutil."""
+        from copercitrus_price_collector.product_analysis import normalizar_loja
+
+        self.assertEqual(
+            "Mercado Livre",
+            normalizar_loja("Mercado Livre (JACTO por Magazine Brasileiro Loja oficial)"),
+        )
+        self.assertEqual("Shopee", normalizar_loja("Shopee Mall"))
+
+    def test_keeps_a_store_that_is_not_a_marketplace(self):
+        from copercitrus_price_collector.product_analysis import normalizar_loja
+
+        self.assertEqual("Guimepa Ferramentas", normalizar_loja("Guimepa Ferramentas"))
+        self.assertIsNone(normalizar_loja(None))

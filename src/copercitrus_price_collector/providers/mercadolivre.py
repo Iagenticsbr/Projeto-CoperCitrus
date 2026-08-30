@@ -138,7 +138,7 @@ class MercadoLivreProvider:
             provider=self.name,
             rank=rank,
             title=titulo,
-            description=item.get("promocoes") or titulo,
+            description=f"Vendido por {vendedor}" if vendedor else titulo,
             price_min=preco,
             # Quando ha preco anterior, a faixa real do anuncio vai do preco
             # promocional ao preco cheio.
@@ -149,7 +149,8 @@ class MercadoLivreProvider:
             package_quantity=extract_package_quantity(titulo),
             similarity_score=similarity_score(product, titulo),
             match_type=classify_match(similarity_score(product, titulo)),
-            seller=f"Mercado Livre ({vendedor})" if vendedor else self.name,
+            # O canal e o que agrega; o vendedor especifico vai na descricao.
+            seller=self.name,
             rating=_decimal(item.get("produtoReviews")),
             review_count=_inteiro(item.get("numeroAvaliacoes")),
             sold_count=_inteiro(item.get("quantidadeVendida")),

@@ -89,10 +89,13 @@ class MercadoLivreProviderTest(unittest.TestCase):
     def test_offer_is_always_flagged_as_preferred_store(self):
         self.assertTrue(_provider().search(self.product, 5)[0].loja_preferida)
 
-    def test_seller_keeps_the_marketplace_and_the_store(self):
-        self.assertEqual(
-            "Mercado Livre (JACTO)", _provider().search(self.product, 5)[0].seller
-        )
+    def test_seller_is_the_marketplace_not_the_reseller(self):
+        """Agregar por loja so faz sentido com o canal, nao com o revendedor."""
+        oferta = _provider().search(self.product, 5)[0]
+
+        self.assertEqual("Mercado Livre", oferta.seller)
+        # O revendedor continua registrado, so nao fragmenta a agregacao.
+        self.assertEqual("Vendido por JACTO", oferta.description)
 
     def test_entries_without_title_or_price_are_skipped(self):
         self.assertEqual(1, len(_provider().search(self.product, 5)))
@@ -159,10 +162,13 @@ class ShopeeApiTest(unittest.TestCase):
     def test_offer_is_flagged_as_preferred_store(self):
         self.assertTrue(self.provider.search(self.product, 5)[0].loja_preferida)
 
-    def test_mall_listing_is_named(self):
+    def test_mall_listing_keeps_a_single_store_name(self):
         self.itens[0]["is_mall"] = True
 
-        self.assertEqual("Shopee Mall", self.provider.search(self.product, 5)[0].seller)
+        oferta = self.provider.search(self.product, 5)[0]
+
+        self.assertEqual("Shopee", oferta.seller)
+        self.assertEqual("Shopee Mall", oferta.description)
 
     def test_entry_without_price_is_skipped(self):
         self.itens.append({"item_id": 1, "name": "Sem preco", "price": 0})

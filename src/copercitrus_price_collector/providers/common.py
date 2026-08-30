@@ -13,6 +13,7 @@ from ..product_analysis import (
     extract_package_quantity,
     extract_seller,
     identificar_marketplace,
+    normalizar_loja,
     identify_brand,
     parse_price,
     similarity_score,
@@ -45,7 +46,7 @@ def map_card(
         match_type=classify_match(score),
         # Marketplace pelo dominio primeiro: e o dado confiavel. O texto do
         # card vem depois, e so quando nao for promocao disfarcada de loja.
-        seller=(
+        seller=normalizar_loja(
             identificar_marketplace(card.purchase_url)
             or card.seller
             or extract_seller(card.raw_text)
@@ -96,13 +97,17 @@ def buscar_em_lojas_preferidas(
     ]
     vistos: set[str] = set()
     resultados: list[SearchResult] = []
+    falhas: list[ProviderError] = []
     for consulta in consultas:
         try:
             cards = browser.collect_cards(
                 provider_name, montar_url(consulta), selectors, limit
             )
-        except ProviderError:
-            # Uma loja sem resultado nao pode derrubar as demais consultas.
+        except ProviderError as exc:
+            # Uma loja sem resultado nao pode derrubar as demais consultas,
+            # mas se todas falharem isso e erro, nao ausencia de oferta:
+            # engolir silenciosamente faz bloqueio parecer mercado vazio.
+            falhas.append(exc)
             continue
         for card in cards:
             chave = f"{normalize_text(card.title)}|{card.price_text}"
@@ -110,4 +115,6 @@ def buscar_em_lojas_preferidas(
                 continue
             vistos.add(chave)
             resultados.append(map_card(provider_name, product, card, len(resultados) + 1))
+    if not resultados and len(falhas) == len(consultas):
+        raise falhas[0]
     return marcar_preferidas(resultados, preferidas)

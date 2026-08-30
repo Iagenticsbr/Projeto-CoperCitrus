@@ -129,12 +129,11 @@ class ShopeeProvider:
     ) -> SearchResult:
         pontuacao = similarity_score(product, titulo)
         cheio = _preco(item.get("original_price"))
-        loja = "Shopee Mall" if item.get("is_mall") else self.name
         return SearchResult(
             provider=self.name,
             rank=rank,
             title=titulo,
-            description=titulo,
+            description="Shopee Mall" if item.get("is_mall") else titulo,
             price_min=preco,
             price_max=cheio if cheio and cheio > preco else preco,
             currency=item.get("currency") or "BRL",
@@ -143,7 +142,7 @@ class ShopeeProvider:
             package_quantity=extract_package_quantity(titulo),
             similarity_score=pontuacao,
             match_type=classify_match(pontuacao),
-            seller=loja,
+            seller=self.name,
             rating=item.get("rating") if isinstance(item.get("rating"), (int, float)) else None,
             review_count=_inteiro(item.get("rating_count")),
             sold_count=_inteiro(item.get("sold_count")),
