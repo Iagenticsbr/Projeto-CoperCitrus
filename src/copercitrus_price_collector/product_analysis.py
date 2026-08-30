@@ -206,6 +206,10 @@ def extract_seller(raw_text: str | None) -> str | None:
         # entrava como nome de loja. Nome de loja tem letra.
         if not re.search(r"[a-zA-Z]", line):
             continue
+        # Contagem de vendedores do comparador ("em 3 lojas", "1 loja") ocupa
+        # a mesma posicao do vendedor no card e nao e nome de ninguem.
+        if re.fullmatch(r"(em\s+)?\d+\s+lojas?", normalize_text(line)):
+            continue
         normalized = normalize_text(line)
         if not normalized or any(noise in normalized for noise in SELLER_NOISE):
             continue

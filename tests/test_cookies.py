@@ -120,3 +120,21 @@ class MarketplaceTest(unittest.TestCase):
 
         self.assertIsNone(identificar_marketplace("https://www.buscape.com.br/lead?oid=1"))
         self.assertIsNone(identificar_marketplace(None))
+
+    def test_store_count_is_not_a_store_name(self):
+        """"1 loja" e contagem de vendedores do comparador, nao vendedor."""
+        from copercitrus_price_collector.product_analysis import extract_seller
+
+        self.assertEqual("Magalu", extract_seller("Lavadora\nR$ 900,00\n1 loja\nMagalu"))
+        self.assertEqual(
+            "Webcontinental",
+            extract_seller("Lavadora\nR$ 900,00\nem 3 lojas\nWebcontinental"),
+        )
+
+    def test_store_named_lojas_still_works(self):
+        from copercitrus_price_collector.product_analysis import extract_seller
+
+        self.assertEqual(
+            "Lojas Americanas",
+            extract_seller("Lavadora\nR$ 900,00\nLojas Americanas"),
+        )
