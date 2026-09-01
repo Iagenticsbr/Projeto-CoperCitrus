@@ -9,11 +9,13 @@ from .errors import ConfigurationError, PriceCollectorError
 from .database import export_csv, export_database
 from .dashboard import render_dashboard
 from .historico import append_run
+from . import ml_token
 from .publicar import publicar, reiniciar
 from .providers import (
     BingShoppingProvider,
     BuscapeProvider,
     GoogleShoppingProvider,
+    MercadoLivreOficialProvider,
     MercadoLivreProvider,
     PriceProvider,
     ShopeeProvider,
@@ -41,6 +43,28 @@ def _parser() -> argparse.ArgumentParser:
     painel.add_argument("--database", default="resultados/precos.db")
     painel.add_argument("--historico", default="resultados/historico.db")
     painel.add_argument("--output", default="resultados/dashboard.html")
+
+    autorizar = subcommands.add_parser(
+        "ml-autorizar", help="mostra o link de autorizacao do Mercado Livre"
+    )
+    autorizar.add_argument("--client-id", required=True)
+    autorizar.add_argument("--redirect-uri", required=True)
+
+    trocar = subcommands.add_parser(
+        "ml-token", help="troca o codigo por token e grava com renovacao"
+    )
+    trocar.add_argument("codigo")
+    trocar.add_argument("--client-id", required=True)
+    trocar.add_argument("--client-secret", required=True)
+    trocar.add_argument("--redirect-uri", required=True)
+    trocar.add_argument("--arquivo", default="resultados/ml_token.json")
+
+    renovar_cmd = subcommands.add_parser(
+        "ml-renovar", help="renova o token quando passou de 5 horas"
+    )
+    renovar_cmd.add_argument("--arquivo", default="resultados/ml_token.json")
+    renovar_cmd.add_argument("--client-id")
+    renovar_cmd.add_argument("--client-secret")
 
     envio = subcommands.add_parser(
         "publicar", help="envia a base coletada para a instancia hospedada"
@@ -71,7 +95,8 @@ def _parser() -> argparse.ArgumentParser:
         "--providers",
         default="buscape,zoom,bing",
         help=(
-            "fontes separadas por virgula: mercadolivre, shopee, buscape, "
+            "fontes separadas por virgula: mercadolivre (API oficial), "
+            "mercadolivre-apify, shopee, buscape, "
             "zoom, bing, google, shopee-web"
         ),
     )
@@ -142,6 +167,11 @@ def _parser() -> argparse.ArgumentParser:
         help="corte de similaridade do modo exato, de 0 a 100 (padrao 80)",
     )
     collect.add_argument(
+        "--ml-token-arquivo",
+        default="resultados/ml_token.json",
+        help="arquivo de token do Mercado Livre, renovado automaticamente",
+    )
+    collect.add_argument(
         "--somente-lojas-preferidas",
         action="store_true",
         help="mantem na base apenas as lojas de --lojas-preferidas",
@@ -181,7 +211,8 @@ LOGIN_URLS = {
 }
 
 PROVIDER_FACTORIES = {
-    "mercadolivre": MercadoLivreProvider,
+    "mercadolivre": MercadoLivreOficialProvider,
+    "mercadolivre-apify": MercadoLivreProvider,
     "shopee": ShopeeProvider,
     "buscape": BuscapeProvider,
     "zoom": ZoomProvider,
@@ -214,6 +245,31 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "template":
             destination = create_template(args.output)
             print(f"Planilha-modelo criada: {destination}")
+            return 0
+
+        if args.command == "ml-autorizar":
+            print(ml_token.url_de_autorizacao(args.client_id, args.redirect_uri))
+            return 0
+
+        if args.command == "ml-token":
+            resposta = ml_token.trocar_codigo(
+                args.codigo, args.client_id, args.client_secret, args.redirect_uri
+            )
+            destino = ml_token.gravar(args.arquivo, resposta)
+            renovavel = "sim" if resposta.get("refresh_token") else "NAO"
+            print(f"Token gravado em {destino} | renovavel: {renovavel}")
+            if not resposta.get("refresh_token"):
+                print(
+                    "Sem refresh_token a coleta automatica para em 6 horas. "
+                    "Reautorize com o escopo offline_access."
+                )
+            return 0
+
+        if args.command == "ml-renovar":
+            token = ml_token.token_valido(
+                args.arquivo, args.client_id, args.client_secret
+            )
+            print(f"Token valido: {token[:12]}...")
             return 0
 
         if args.command == "publicar":
@@ -316,6 +372,17 @@ def main(argv: list[str] | None = None) -> int:
             settings = replace(
                 settings, similaridade_minima=args.similaridade_minima
             )
+
+        # Token do Mercado Livre renovado antes da coleta comecar: uma coleta
+        # longa nao pode morrer no meio por vencimento.
+        if "mercadolivre" in selected and not settings.ml_token:
+            try:
+                settings = replace(
+                    settings,
+                    ml_token=ml_token.token_valido(args.ml_token_arquivo),
+                )
+            except PriceCollectorError as exc:
+                print(f"Aviso do token do Mercado Livre: {exc}", file=sys.stderr)
 
         products = read_products(args.input, args.sheet, args.max_products)
         browser = BrowserRpa(settings)

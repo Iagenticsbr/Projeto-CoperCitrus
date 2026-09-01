@@ -23,6 +23,7 @@ def _settings(**overrides):
         "somente_exatos": True,
         "somente_lojas_preferidas": False,
         "apify_token": None,
+        "ml_token": None,
         "similaridade_minima": 80.0,
     }
     base.update(overrides)

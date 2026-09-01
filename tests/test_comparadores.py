@@ -294,3 +294,23 @@ class CodigoFabricanteTest(unittest.TestCase):
         produto = ProductInput(4, "PULVERIZADOR COSTAL PJH", "Jacto", "825398 JACTO")
 
         self.assertLess(similarity_score(produto, "Filtro Oleo Jacto"), 50.0)
+
+
+class ConsultaSemDescricaoTest(unittest.TestCase):
+    """SKU cuja descricao e so codigo de barras nao identifica produto."""
+
+    def test_barcode_only_query_matches_nothing(self):
+        ean = ProductInput(4, "7909439011096", "Jacto", "1350764 JACTO")
+
+        # Sem termo descritivo, qualquer item da marca casaria 100%.
+        self.assertEqual(0.0, similarity_score(ean, "Pulverizador Costal Jacto PJH 20L"))
+        self.assertEqual(0.0, similarity_score(ean, "Lavadora Alta Pressao Jacto J6000"))
+
+    def test_real_description_still_matches(self):
+        produto = ProductInput(4, "LAVADORA ALTA PRESSAO J6600 220V", "Jacto", "1350780 JACTO")
+
+        certo = similarity_score(produto, "Lavadora Alta Pressao Jacto J6600 220v")
+        errado = similarity_score(produto, "Pulverizador Costal Jacto PJH")
+
+        self.assertGreater(certo, 60.0)
+        self.assertLess(errado, 50.0)

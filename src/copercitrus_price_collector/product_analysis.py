@@ -345,6 +345,13 @@ def similarity_score(product: ProductInput, found_title: str) -> float:
         for token in requested_tokens
         if not (token.isdigit() and len(token) >= 6)
     }
+    marca_tokens = set(match_tokens(product.marca)) if product.marca else set()
+    # Sem termo descritivo alem da marca, a consulta nao identifica produto
+    # nenhum: qualquer item daquela marca casaria 100%. Foi assim que um
+    # pulverizador entrou como equivalente de uma lavadora, num SKU cuja
+    # descricao na planilha e so um codigo de barras.
+    if len(descritivos - marca_tokens) < 2:
+        return 0.0
     if descritivos:
         requested_tokens = descritivos
     if not requested_tokens:

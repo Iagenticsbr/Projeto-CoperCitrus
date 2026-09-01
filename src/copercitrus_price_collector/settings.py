@@ -58,6 +58,7 @@ class Settings:
     somente_exatos: bool
     somente_lojas_preferidas: bool
     apify_token: str | None
+    ml_token: str | None
     similaridade_minima: float
 
     @classmethod
@@ -92,6 +93,7 @@ class Settings:
                 "RPA_SOMENTE_LOJAS_PREFERIDAS", False
             ),
             apify_token=os.getenv("APIFY_TOKEN") or None,
+            ml_token=os.getenv("ML_TOKEN") or None,
             similaridade_minima=_float_env("RPA_SIMILARIDADE_MINIMA", 70.0),
         )
         if settings.browser_timeout_seconds <= 0:

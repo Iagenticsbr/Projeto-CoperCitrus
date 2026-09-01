@@ -188,3 +188,16 @@ class ShopeeApiTest(unittest.TestCase):
 
         self.assertEqual(1, len(ofertas))
         self.assertEqual(894.08, ofertas[0].price_min)
+
+    def test_offer_whose_link_points_elsewhere_is_discarded(self):
+        """O coletor devolve linhas com titulo e link de anuncios diferentes."""
+        self.itens[0]["name"] = "Esmerilhadeira Angular 900W Dewalt DWE4120"
+        self.itens[0]["url"] = "https://shopee.com.br/Esmerilhadeira-Dewalt-800W-DWE4020B2B"
+
+        self.assertEqual([], self.provider.search(self.product, 5))
+
+    def test_matching_model_code_passes(self):
+        self.itens[0]["name"] = "Lavadora Jacto J6600 1600w"
+        self.itens[0]["url"] = "https://shopee.com.br/Lavadora-Jacto-J6600-i.9.5"
+
+        self.assertEqual(1, len(self.provider.search(self.product, 5)))

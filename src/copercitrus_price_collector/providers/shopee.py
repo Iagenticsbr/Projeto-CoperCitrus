@@ -11,6 +11,7 @@ Os valores chegam em centavos: 89408 significa R$ 894,08.
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 
@@ -18,6 +19,7 @@ from ..errors import ConfigurationError, ProviderError
 from ..models import ProductInput, SearchResult
 from ..product_analysis import (
     classify_match,
+    normalize_text,
     extract_package_quantity,
     identify_brand,
     similarity_score,
@@ -33,6 +35,10 @@ CENTAVOS = 100
 # leitura, nao promocao. Uma oferta de R$ 0,01 destruiria o menor preco do
 # painel, entao ela e descartada e registrada.
 PRECO_MINIMO = 1.0
+# O mesmo coletor que devolve preco de 1 centavo tambem devolve linhas em que
+# o titulo e o link pertencem a anuncios diferentes. Entregar isso significa
+# mandar o comprador para outro produto. O codigo do modelo distingue os dois
+# com precisao: DWE4120 no titulo contra DWE4020B2B no link e linha trocada.
 
 
 def _preco(valor: object) -> float | None:
@@ -48,6 +54,37 @@ def _inteiro(valor: object) -> int | None:
         return int(valor)
     except (TypeError, ValueError):
         return None
+
+
+def _codigos(texto: str) -> set[str]:
+    """Codigos de modelo do texto, como DWE4120 ou J6600.
+
+    Extraidos antes de qualquer separacao entre letra e numero: quebrar
+    "DWE4120" em "dwe" e "4120" apagaria justamente o que distingue um
+    modelo do outro.
+    """
+    normalizado = normalize_text(texto.replace("-", " ").replace("/", " "))
+    return {
+        token
+        for token in re.findall(r"[a-z]+\d[a-z\d]*|\d+[a-z]+[a-z\d]*", normalizado)
+        if len(token) >= 4
+    }
+
+
+def _url_confere(titulo: str, url: str) -> bool:
+    """Confere se o link pertence ao anuncio do titulo.
+
+    So reprova quando os dois lados declaram codigo de modelo e eles nao se
+    encontram. Sem codigo em algum dos lados, nao ha como afirmar divergencia
+    e a oferta passa.
+    """
+    if not url:
+        return False
+    do_titulo = _codigos(titulo)
+    da_url = _codigos(url)
+    if not do_titulo or not da_url:
+        return True
+    return bool(do_titulo & da_url)
 
 
 class ShopeeProvider:
@@ -110,6 +147,14 @@ class ShopeeProvider:
                 print(
                     f"        preco implausivel descartado: R$ {preco:.2f} "
                     f"em {titulo[:40]}",
+                    flush=True,
+                )
+                continue
+            endereco = item.get("url") or ""
+            if not _url_confere(titulo, endereco):
+                print(
+                    f"        titulo e link divergentes, descartado: "
+                    f"{titulo[:44]}",
                     flush=True,
                 )
                 continue

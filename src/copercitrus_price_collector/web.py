@@ -313,6 +313,37 @@ def criar_app():
                 removidos.append(arquivo.name)
         return JSONResponse({"removidos": removidos})
 
+    @app.post("/remover-fonte")
+    def remover_fonte(
+        fontes: str, x_token: str | None = Header(default=None)
+    ) -> JSONResponse:
+        """Apaga do historico as ofertas das fontes indicadas.
+
+        Existe porque uma execucao com a fonte errada contamina a base sem
+        que haja como desfazer: apagar tudo perderia o resto do historico.
+        """
+        if INGEST_TOKEN and x_token != INGEST_TOKEN:
+            raise HTTPException(401, "Token invalido")
+        alvos = [item.strip() for item in fontes.split(",") if item.strip()]
+        if not alvos or not HISTORICO.is_file():
+            return JSONResponse({"removidas": 0})
+        conexao = sqlite3.connect(HISTORICO)
+        try:
+            marcadores = ",".join("?" * len(alvos))
+            cursor = conexao.execute(
+                f"DELETE FROM historico_ofertas WHERE fonte IN ({marcadores})",
+                alvos,
+            )
+            removidas = cursor.rowcount
+            conexao.execute(
+                "DELETE FROM historico_estatisticas WHERE sku NOT IN "
+                "(SELECT DISTINCT sku FROM historico_ofertas)"
+            )
+            conexao.commit()
+        finally:
+            conexao.close()
+        return JSONResponse({"removidas": removidas, "fontes": alvos})
+
     @app.get("/saude")
     def saude() -> JSONResponse:
         return JSONResponse(
