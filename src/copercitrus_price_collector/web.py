@@ -48,6 +48,9 @@ BASE_ATUAL = DADOS / "precos.db"
 INGEST_TOKEN = os.getenv("RPA_INGEST_TOKEN")
 DIA_AGENDA = int(os.getenv("RPA_AGENDA_DIA", "1"))
 EXTENSOES = (".xlsx", ".csv", ".txt")
+# Fontes da execucao mensal. Configuravel porque a lista muda conforme o
+# canal que o cliente quer acompanhar, e engessa-la ja contaminou uma base.
+FONTES_AGENDA = os.getenv("RPA_AGENDA_FONTES", "mercadolivre,shopee")
 
 
 @dataclass
@@ -176,7 +179,7 @@ def criar_app():
     @app.post("/buscar")
     async def buscar(
         planilha: UploadFile = File(...),
-        fontes: str = Form("buscape,zoom,bing"),
+        fontes: str = Form(FONTES_AGENDA),
         limite: int = Form(8),
     ) -> JSONResponse:
         if not planilha.filename or not planilha.filename.lower().endswith(EXTENSOES):
@@ -263,12 +266,12 @@ def criar_app():
 
         resposta = {"catalogo": destino.name, "itens": len(itens)}
         if buscar_agora:
-            execucao = Execucao(uuid.uuid4().hex, destino.name, "buscape,zoom,bing")
+            execucao = Execucao(uuid.uuid4().hex, destino.name, FONTES_AGENDA)
             with _TRAVA:
                 EXECUCOES[execucao.id] = execucao
             threading.Thread(
                 target=executar_coleta,
-                args=(execucao, destino, "buscape,zoom,bing", 8),
+                args=(execucao, destino, FONTES_AGENDA, 5),
                 daemon=True,
             ).start()
             resposta["execucao"] = execucao.id
@@ -356,13 +359,13 @@ def criar_app():
         )
 
     def _coleta_agendada(catalogo: Path) -> None:
-        execucao = Execucao(
-            uuid.uuid4().hex, catalogo.name, "buscape,zoom,bing"
+        execucao = Execucao(uuid.uuid4().hex, catalogo.name, FONTES_AGENDA)
+        execucao.registrar(
+            f"Execucao mensal automatica iniciada | fontes: {FONTES_AGENDA}"
         )
-        execucao.registrar("Execucao mensal automatica iniciada")
         with _TRAVA:
             EXECUCOES[execucao.id] = execucao
-        executar_coleta(execucao, catalogo, "buscape,zoom,bing", 8)
+        executar_coleta(execucao, catalogo, FONTES_AGENDA, 5)
 
     agenda = AgendaMensal(DADOS, _coleta_agendada, dia=DIA_AGENDA)
     agenda.iniciar()
@@ -503,12 +506,11 @@ PAGINA_ENVIO = """<!DOCTYPE html>
         <div>
           <label>Fontes</label>
           <select name="fontes">
-            <option value="buscape,zoom,bing">Buscapé + Zoom + Bing</option>
-            <option value="google">Google Shopping</option>
-            <option value="google,buscape,zoom,bing">Todas</option>
-            <option value="buscape">Buscapé</option>
-            <option value="bing">Bing Shopping</option>
+            <option value="mercadolivre,shopee">Mercado Livre + Shopee</option>
+            <option value="mercadolivre">Mercado Livre (API oficial)</option>
             <option value="shopee">Shopee</option>
+            <option value="mercadolivre-apify">Mercado Livre (Apify)</option>
+            <option value="buscape,zoom,bing">Comparadores</option>
           </select>
         </div>
         <div>
