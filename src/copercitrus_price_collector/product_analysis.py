@@ -79,6 +79,13 @@ def build_search_terms(
                 continue
             if len(key) == 1 and key.isalpha():
                 continue
+            # Codigo de cadastro puramente numerico nao existe em anuncio
+            # nenhum: nenhum vendedor escreve "7909439011096" nem "1350764".
+            # Na consulta ele so afasta o resultado certo, e a pontuacao ja o
+            # ignorava — deixar os dois no mesmo criterio evita buscar por um
+            # termo que depois nao conta para nada.
+            if key.isdigit() and len(key) >= 6:
+                continue
             expanded = ABBREVIATIONS.get(key, token)
             if not expanded:
                 continue

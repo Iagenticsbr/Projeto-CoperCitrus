@@ -73,7 +73,9 @@ class SearchTermsTest(unittest.TestCase):
         self.assertIn("digital", terms)
         self.assertIn("automatica", terms)
         self.assertIn("IM125", terms)
-        self.assertIn("6878125125", terms)
+        # Codigo de cadastro puramente numerico sai da consulta: nenhum
+        # anuncio o escreve, e a pontuacao ja o ignorava.
+        self.assertNotIn("6878125125", terms)
         # "VD" e tag interna de fornecedor e nao existe em anuncio publico.
         self.assertNotIn(" VD", f" {terms}")
         # A marca aparece uma vez so, mesmo repetida no codigo do fabricante.
