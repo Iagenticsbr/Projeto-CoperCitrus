@@ -47,6 +47,17 @@ HEADER_ALIASES = {
         "coditem",
     },
     "quantidade": {"quantidade", "qtd", "qtde", "quantidadesolicitada"},
+    # Familia do item. Vale como descricao de reserva: ha SKU cuja descricao
+    # na planilha e so um codigo de barras, e sem isso ele fica sem busca.
+    "categoria": {
+        "categoria",
+        "grupo",
+        "grupon5",
+        "grupoprinn4",
+        "grupomerc",
+        "familia",
+        "linha",
+    },
 }
 
 RESULT_HEADERS = [
@@ -193,12 +204,15 @@ def read_products(
             modelo = _value_at(values, indexes.get("modelo"))
             sku = _value_at(values, indexes.get("sku"))
             quantidade = _value_at(values, indexes.get("quantidade"))
+            categoria = _value_at(values, indexes.get("categoria"))
             if not any((produto, marca, modelo, sku, quantidade)):
                 continue
             if not produto:
                 raise SpreadsheetError(f"Linha {row_number}: Produto esta vazio")
             products.append(
-                ProductInput(row_number, produto, marca, modelo, sku, quantidade)
+                ProductInput(
+                    row_number, produto, marca, modelo, sku, quantidade, categoria
+                )
             )
             if len(products) > max_products:
                 raise SpreadsheetError(
@@ -508,12 +522,15 @@ def _products_from_rows(
         modelo = _value_at(values, indexes.get("modelo"))
         sku = _value_at(values, indexes.get("sku"))
         quantidade = _value_at(values, indexes.get("quantidade"))
+        categoria = _value_at(values, indexes.get("categoria"))
         if not any((produto, marca, modelo, sku, quantidade)):
             continue
         if not produto:
             raise SpreadsheetError(f"Linha {row_number}: Produto esta vazio")
         products.append(
-            ProductInput(row_number, produto, marca, modelo, sku, quantidade)
+            ProductInput(
+                row_number, produto, marca, modelo, sku, quantidade, categoria
+            )
         )
         if len(products) > max_products:
             raise SpreadsheetError(

@@ -218,3 +218,70 @@ class DiscrepanciaTest(unittest.TestCase):
         )
 
         self.assertEqual("abaixo", marcadas[0]["alerta_preco"])
+
+
+class CategoriaTest(unittest.TestCase):
+    """A planilha tem SKU cuja descricao e um codigo de barras.
+
+    A coluna de grupo diz a familia do item. Sem ela esse SKU nao tinha busca
+    nenhuma; com ela, tem busca e mantem a funcao conhecida, que e o que
+    impede casar com equipamento de outra categoria.
+    """
+
+    def _sem_nome(self):
+        return ProductInput(
+            3, "7909439011096", "Jacto", "1350764 JACTO", "1271261", None, "LAVADORAS"
+        )
+
+    def test_category_fills_in_for_a_barcode_description(self):
+        from copercitrus_price_collector.product_analysis import descricao_efetiva
+
+        self.assertEqual("LAVADORAS 7909439011096", descricao_efetiva(self._sem_nome()))
+
+    def test_a_real_description_ignores_the_category(self):
+        from copercitrus_price_collector.product_analysis import descricao_efetiva
+
+        produto = ProductInput(
+            4, "LAVADORA ALTA PRESSAO J6600 220V", "Jacto", None, "1271265", None,
+            "LAVADORAS",
+        )
+
+        self.assertEqual("LAVADORA ALTA PRESSAO J6600 220V", descricao_efetiva(produto))
+
+    def test_plural_category_matches_the_singular_title(self):
+        produto = self._sem_nome()
+        titulo = "Lavadora De Alta Pressao Jacto J6000 Plus"
+
+        self.assertGreater(similarity_score(produto, titulo), 70.0)
+
+    def test_another_category_is_still_rejected(self):
+        produto = self._sem_nome()
+
+        self.assertEqual(
+            "DIVERGENTE", _classificar(produto, "Pulverizador Costal Jacto PJH 20L")
+        )
+
+    def test_the_brand_alone_matches_nothing(self):
+        produto = self._sem_nome()
+
+        self.assertEqual("DIVERGENTE", _classificar(produto, "Trator Jacto"))
+
+    def test_without_a_model_the_offer_is_never_exact(self):
+        """Da para dizer que e uma lavadora Jacto, nao qual delas."""
+        produto = self._sem_nome()
+
+        self.assertEqual(
+            "SIMILAR", _classificar(produto, "Lavadora De Alta Pressao Jacto J6000 Plus")
+        )
+
+    def test_an_accessory_is_not_a_similar(self):
+        produto = self._sem_nome()
+
+        self.assertEqual("DIVERGENTE", _classificar(produto, "Bico Para Lavadora Jacto"))
+
+    def test_a_spare_part_of_the_right_product_is_not_similar(self):
+        produto = ProductInput(9, "PULVERIZADOR COSTAL PJH", "Jacto", "825398 JACTO")
+
+        self.assertEqual(
+            "DIVERGENTE", _classificar(produto, "Cilindro Pulverizador Costal Jacto PJH")
+        )

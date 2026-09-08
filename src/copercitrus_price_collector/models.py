@@ -14,6 +14,10 @@ class ProductInput:
     modelo: str | None = None
     sku: str | None = None
     quantidade_solicitada: str | None = None
+    # Grupo/familia do item na planilha ("LAVADORAS", "COSTAL"). Diz o que o
+    # produto e quando a descricao nao diz — ha SKU cuja descricao e so um
+    # codigo de barras.
+    categoria: str | None = None
 
     @property
     def query(self) -> str:
@@ -23,9 +27,9 @@ class ProductInput:
         cadastro proprio que nao existe em nenhum anuncio publico e derruba
         a pesquisa. Somente descricao, marca e codigo do fabricante entram.
         """
-        from .product_analysis import build_search_terms
+        from .product_analysis import build_search_terms, descricao_efetiva
 
-        return build_search_terms(self.produto, self.marca, self.modelo)
+        return build_search_terms(descricao_efetiva(self), self.marca, self.modelo)
 
 
 @dataclass(frozen=True, slots=True)

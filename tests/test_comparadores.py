@@ -87,7 +87,7 @@ class SearchTermsTest(unittest.TestCase):
 
 class SimilarityTest(unittest.TestCase):
     def test_splits_glued_quantity_tokens(self):
-        self.assertEqual(["jogo", "ferramentas", "110", "pecas"], match_tokens("JG FERRAMENTAS 110PCS"))
+        self.assertEqual(["jogo", "ferramenta", "110", "pecas"], match_tokens("JG FERRAMENTAS 110PCS"))
 
     def test_long_marketplace_title_is_not_penalised(self):
         product = ProductInput(4, "PULVERIZADOR COSTAL PJH", "Jacto", "825398 JACTO")

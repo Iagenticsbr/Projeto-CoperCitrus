@@ -90,6 +90,41 @@ def build_search_terms(
     return " ".join(tokens)
 
 
+def _sem_valor_descritivo(descricao: str | None, marca: str | None) -> bool:
+    """Diz se a descricao nao identifica produto nenhum sozinha.
+
+    Descricao que so tem marca, numero de cadastro ou codigo de barras casa
+    com qualquer item daquela marca. Foi o que deixou um pulverizador entrar
+    como equivalente de uma lavadora.
+    """
+    da_marca = set(match_tokens(marca)) if marca else set()
+    uteis = [
+        token
+        for token in match_tokens(descricao)
+        if token not in da_marca
+        and token not in STOP_WORDS
+        and not (token.isdigit() and len(token) >= 6)
+        and len(token) >= 3
+    ]
+    return len(uteis) < 2
+
+
+def descricao_efetiva(product: ProductInput) -> str:
+    """Descricao utilizavel do item pedido.
+
+    Normalmente e a propria descricao da planilha. Quando ela nao identifica
+    nada — o SKU 1271261 tem "7909439011096" no lugar do nome — entra a
+    categoria da planilha, que diz a familia do item ("LAVADORAS"). Nao e o
+    nome exato, mas transforma um SKU impossivel de buscar em um SKU
+    buscavel, e mantem a funcao conhecida, que e o que impede casar com
+    equipamento de outra categoria.
+    """
+    categoria = getattr(product, "categoria", None)
+    if categoria and _sem_valor_descritivo(product.produto, product.marca):
+        return f"{categoria} {product.produto}"
+    return product.produto
+
+
 def normalize_text(value: str | None) -> str:
     text = unicodedata.normalize("NFKD", value or "")
     text = "".join(char for char in text if not unicodedata.combining(char))
@@ -260,6 +295,19 @@ TOKEN_SYNONYMS = {
 }
 
 
+def _singular(token: str) -> str:
+    """Reduz plural simples ao singular.
+
+    A planilha nomeia a familia no plural ("LAVADORAS", "ESMERILHADEIRAS") e
+    o anuncio escreve o produto no singular. Sem isso os dois nunca casam,
+    ainda que digam a mesma coisa. So o "s" final, e so em palavra longa:
+    cortar mais que isso erraria em "gas", "pcs" e codigo de modelo.
+    """
+    if len(token) >= 6 and token.endswith("s") and not token[-2].isdigit():
+        return token[:-1]
+    return token
+
+
 def match_tokens(value: str | None) -> list[str]:
     """Tokens comparaveis de um texto.
 
@@ -272,7 +320,7 @@ def match_tokens(value: str | None) -> list[str]:
         return []
     split = re.sub(r"(?<=\d)(?=[a-z])|(?<=[a-z])(?=\d)", " ", normalized)
     return [
-        TOKEN_SYNONYMS.get(token, token)
+        TOKEN_SYNONYMS.get(token, _singular(token))
         for token in split.split()
         if token not in STOP_WORDS
     ]
@@ -327,7 +375,9 @@ def similarity_score(product: ProductInput, found_title: str) -> float:
     titulo de marketplace e longo e o denominador da uniao punia justamente
     os anuncios corretos e mais descritivos.
     """
-    requested = build_search_terms(product.produto, product.marca, product.modelo)
+    requested = build_search_terms(
+        descricao_efetiva(product), product.marca, product.modelo
+    )
     requested_normalized = normalize_text(requested)
     found_normalized = normalize_text(found_title)
     if not requested_normalized or not found_normalized:
@@ -346,11 +396,15 @@ def similarity_score(product: ProductInput, found_title: str) -> float:
         if not (token.isdigit() and len(token) >= 6)
     }
     marca_tokens = set(match_tokens(product.marca)) if product.marca else set()
-    # Sem termo descritivo alem da marca, a consulta nao identifica produto
-    # nenhum: qualquer item daquela marca casaria 100%. Foi assim que um
-    # pulverizador entrou como equivalente de uma lavadora, num SKU cuja
+    # Sem nenhum termo descritivo alem da marca, a consulta nao identifica
+    # produto nenhum: qualquer item daquela marca casaria 100%. Foi assim que
+    # um pulverizador entrou como equivalente de uma lavadora, num SKU cuja
     # descricao na planilha e so um codigo de barras.
-    if len(descritivos - marca_tokens) < 2:
+    #
+    # Um termo basta, desde que diga o que o produto e. "lavadora" sozinho ja
+    # separa lavadora de pulverizador, que era o erro a evitar; exigir dois
+    # descartava o SKU inteiro em vez de corrigi-lo.
+    if not descritivos - marca_tokens:
         return 0.0
     if descritivos:
         requested_tokens = descritivos
@@ -440,7 +494,7 @@ def termos_de_funcao(produto: str | None, marca: str | None = None) -> list[str]
 
 def mesma_funcao(produto: ProductInput, titulo: str) -> bool:
     """O anuncio e do mesmo tipo de equipamento que o item pedido."""
-    termos = termos_de_funcao(produto.produto, produto.marca)
+    termos = termos_de_funcao(descricao_efetiva(produto), produto.marca)
     if not termos:
         return False
     do_titulo = set(match_tokens(titulo))
@@ -475,13 +529,23 @@ def classificar_oferta(
     voltagem. Sem isso, "similar" viraria qualquer item da mesma marca — foi
     assim que um pulverizador entrou como equivalente de uma lavadora.
     """
-    pedidos = codigos_de_modelo(f"{produto.produto} {produto.modelo or ''}")
+    # Peca de reposicao carrega o nome do equipamento no titulo, entao ela
+    # passa no teste de funcao: "Bico Para Lavadora Jacto" e mesma funcao que
+    # "Lavadora Jacto" para qualquer comparacao de texto. Nao e alternativa
+    # de compra nenhuma, entao nao entra nem como similar.
+    if set(match_tokens(titulo)) & ACCESSORY_TERMS:
+        return "DIVERGENTE"
+    pedidos = codigos_de_modelo(f"{descricao_efetiva(produto)} {produto.modelo or ''}")
     ofertados = codigos_de_modelo(titulo)
     # J6600 e J7600 dividem nome, funcao e voltagem: a pontuacao de texto
     # sozinha dava 83% e chamava os dois de mesmo produto. Codigo declarado
     # nos dois lados e sem interseccao decide contra.
     outro_modelo = bool(pedidos and ofertados and not (pedidos & ofertados))
-    if pontuacao >= corte_exato and not outro_modelo:
+    # SKU identificado so pela categoria da planilha nao tem modelo conhecido:
+    # da para afirmar que e uma lavadora Jacto, nao qual delas. Chamar de
+    # exato seria afirmar mais do que a planilha diz.
+    sem_nome_proprio = descricao_efetiva(produto) != produto.produto
+    if pontuacao >= corte_exato and not outro_modelo and not sem_nome_proprio:
         return "COMPATIVEL"
     if mesma_funcao(produto, titulo) and voltagem_compativel(
         extrair_voltagem(f"{produto.produto} {produto.modelo or ''}"),
