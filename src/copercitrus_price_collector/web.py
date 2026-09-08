@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -33,6 +32,7 @@ except ImportError:  # pragma: no cover - dependencia opcional
 
 from .agenda import AgendaMensal, caminho_catalogo, ler_estado, salvar_catalogo
 from .dashboard import HTML_TEMPLATE, collect_dashboard_data
+from .armazenamento import Banco, destino_padrao, disponivel, e_postgres
 from .database import export_csv, export_database
 from .errors import ConfigurationError, PriceCollectorError
 from .historico import append_run
@@ -43,7 +43,10 @@ from .spreadsheet import export_results, read_products
 DADOS = Path(os.getenv("RPA_DATA_DIR", "dados_web"))
 ENVIOS = DADOS / "planilhas"
 SAIDAS = DADOS / "resultados"
-HISTORICO = DADOS / "historico.db"
+# Arquivo quando roda na maquina de quem opera; PostgreSQL quando ha
+# DATABASE_URL, que e o caso no Railway — o disco do container e efemero
+# e levava o historico junto a cada deploy.
+HISTORICO = destino_padrao(DADOS / "historico.db")
 BASE_ATUAL = DADOS / "precos.db"
 INGEST_TOKEN = os.getenv("RPA_INGEST_TOKEN")
 DIA_AGENDA = int(os.getenv("RPA_AGENDA_DIA", "1"))
@@ -227,7 +230,7 @@ def criar_app():
 
     @app.get("/dashboard", response_class=HTMLResponse)
     def painel() -> str:
-        if not BASE_ATUAL.is_file() and not HISTORICO.is_file():
+        if not BASE_ATUAL.is_file() and not disponivel(HISTORICO):
             return PAGINA_SEM_DADOS
         dados = collect_dashboard_data(BASE_ATUAL, HISTORICO)
         return HTML_TEMPLATE.replace(
@@ -311,10 +314,25 @@ def criar_app():
         if INGEST_TOKEN and x_token != INGEST_TOKEN:
             raise HTTPException(401, "Token invalido")
         removidos = []
-        for arquivo in (HISTORICO, BASE_ATUAL):
-            if arquivo.is_file():
-                arquivo.unlink()
-                removidos.append(arquivo.name)
+        if BASE_ATUAL.is_file():
+            BASE_ATUAL.unlink()
+            removidos.append(BASE_ATUAL.name)
+        if disponivel(HISTORICO):
+            if e_postgres(HISTORICO):
+                # Apagar as linhas, nao o banco: o PostgreSQL e do projeto
+                # inteiro e derrubar o esquema levaria junto o que nao e nosso.
+                with Banco(HISTORICO) as banco:
+                    for tabela in (
+                        "historico_ofertas",
+                        "historico_estatisticas",
+                        "execucoes",
+                    ):
+                        banco.executar(f"DELETE FROM {tabela}")
+                    banco.confirmar()
+                removidos.append("historico (PostgreSQL)")
+            else:
+                Path(HISTORICO).unlink()
+                removidos.append(Path(HISTORICO).name)
         return JSONResponse({"removidos": removidos})
 
     @app.post("/remover-fonte")
@@ -329,23 +347,23 @@ def criar_app():
         if INGEST_TOKEN and x_token != INGEST_TOKEN:
             raise HTTPException(401, "Token invalido")
         alvos = [item.strip() for item in fontes.split(",") if item.strip()]
-        if not alvos or not HISTORICO.is_file():
+        if not alvos or not disponivel(HISTORICO):
             return JSONResponse({"removidas": 0})
-        conexao = sqlite3.connect(HISTORICO)
+        banco = Banco(HISTORICO)
         try:
             marcadores = ",".join("?" * len(alvos))
-            cursor = conexao.execute(
+            cursor = banco.executar(
                 f"DELETE FROM historico_ofertas WHERE fonte IN ({marcadores})",
                 alvos,
             )
             removidas = cursor.rowcount
-            conexao.execute(
+            banco.executar(
                 "DELETE FROM historico_estatisticas WHERE sku NOT IN "
                 "(SELECT DISTINCT sku FROM historico_ofertas)"
             )
-            conexao.commit()
+            banco.confirmar()
         finally:
-            conexao.close()
+            banco.fechar()
         return JSONResponse({"removidas": removidas, "fontes": alvos})
 
     @app.get("/saude")
@@ -354,7 +372,8 @@ def criar_app():
             {
                 "estado": "ok",
                 "base": BASE_ATUAL.is_file(),
-                "historico": HISTORICO.is_file(),
+                "historico": disponivel(HISTORICO),
+                "banco": "postgres" if e_postgres(HISTORICO) else "sqlite",
                 "execucoes": len(EXECUCOES),
             }
         )
@@ -378,7 +397,6 @@ def _ingerir_ofertas(ofertas: list[dict], planilha: str | None) -> int:
     """Grava ofertas vindas de outra maquina, sem duplicar o que ja existe."""
     from .historico import SCHEMA
 
-    HISTORICO.parent.mkdir(parents=True, exist_ok=True)
     momento = datetime.utcnow().replace(microsecond=0).isoformat()
     dia = momento[:10]
     # Piso de plausibilidade tambem na entrada: coleta feita antes da correcao,
@@ -390,10 +408,10 @@ def _ingerir_ofertas(ofertas: list[dict], planilha: str | None) -> int:
     ]
     if not ofertas:
         raise HTTPException(400, "Nenhuma oferta com preco plausivel")
-    conexao = sqlite3.connect(HISTORICO)
+    banco = Banco(HISTORICO)
     try:
-        conexao.executescript(SCHEMA)
-        cursor = conexao.execute(
+        banco.criar(SCHEMA)
+        execucao_id = banco.inserir_e_devolver_id(
             "INSERT INTO execucoes (executado_em, planilha, fontes, produtos, ofertas)"
             " VALUES (?, ?, ?, ?, ?)",
             (
@@ -404,9 +422,8 @@ def _ingerir_ofertas(ofertas: list[dict], planilha: str | None) -> int:
                 len(ofertas),
             ),
         )
-        execucao_id = cursor.lastrowid
-        antes = conexao.execute("SELECT count(*) FROM historico_ofertas").fetchone()[0]
-        conexao.executemany(
+        antes = banco.valor("SELECT count(*) AS n FROM historico_ofertas")
+        banco.executar_muitos(
             "INSERT OR IGNORE INTO historico_ofertas (execucao_id, coletado_em, dia,"
             " sku, produto, marca, fonte, loja, titulo, preco, classificacao,"
             " similaridade, loja_preferida, url)"
@@ -432,11 +449,11 @@ def _ingerir_ofertas(ofertas: list[dict], planilha: str | None) -> int:
                 if item.get("produto")
             ],
         )
-        depois = conexao.execute("SELECT count(*) FROM historico_ofertas").fetchone()[0]
-        conexao.commit()
-        return depois - antes
+        depois = banco.valor("SELECT count(*) AS n FROM historico_ofertas")
+        banco.confirmar()
+        return int(depois) - int(antes)
     finally:
-        conexao.close()
+        banco.fechar()
 
 
 PAGINA_SEM_DADOS = """<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">

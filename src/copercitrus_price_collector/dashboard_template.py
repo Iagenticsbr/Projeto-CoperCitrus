@@ -9,54 +9,74 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap">
 <title>Inteligência de Preços CoperCitrus</title>
 <style>
+  /* Cores da marca iagentics, lidas dos tokens do proprio site:
+     ink #131723, paper #f8f8f8, violet #7607e8, indigo #6020ee,
+     periwinkle #6c66f3, blue #6693f8, sky #55afed.
+     Verde, amarelo e vermelho nao existem na marca e continuam aqui porque
+     sao semanticos: barato, mediana e caro precisam ser lidos sem legenda. */
   :root {
-    --fundo:#0b1017; --painel:#141d28; --painel2:#18232f; --linha:#243444;
-    --texto:#eef4fa; --suave:#8ea3b8; --fraco:#5f7387;
-    --azul:#4ea3ff; --verde:#2fd6a0; --amarelo:#ffc861; --vermelho:#ff6b7a;
-    --roxo:#a78bfa;
+    --ink:#131723; --paper:#f8f8f8;
+    --violet:#7607e8; --indigo:#6020ee; --periwinkle:#6c66f3;
+    --blue:#6693f8; --sky:#55afed;
+    --fundo:#0e111a; --painel:#171c2a; --painel2:#1d2333; --linha:#2a3145;
+    --texto:var(--paper); --suave:#8b93a8; --fraco:#6b7385;
+    --azul:var(--blue); --roxo:var(--periwinkle);
+    --verde:#3ddc97; --amarelo:#ffc861; --vermelho:#ff6b7a;
+    /* Superficie reta e controle em pilula: e assim que a marca se apresenta. */
+    --r-surf:4px; --r-ctrl:999px;
   }
   * { box-sizing:border-box; }
   html { scroll-behavior:smooth; }
   body {
     margin:0; background:var(--fundo); color:var(--texto);
-    font:15px/1.55 "Segoe UI",-apple-system,system-ui,sans-serif;
+    font:15px/1.55 "Space Grotesk","Segoe UI",-apple-system,system-ui,sans-serif;
     -webkit-font-smoothing:antialiased;
   }
   .capa {
     background:
-      radial-gradient(1100px 380px at 8% -30%, rgba(78,163,255,.20), transparent 65%),
-      radial-gradient(900px 340px at 92% -20%, rgba(47,214,160,.14), transparent 60%),
-      linear-gradient(180deg, #101a26 0%, var(--fundo) 100%);
+      radial-gradient(1100px 380px at 8% -30%, rgba(118,7,232,.26), transparent 65%),
+      radial-gradient(900px 340px at 92% -20%, rgba(102,147,248,.18), transparent 60%),
+      linear-gradient(180deg, #151a2b 0%, var(--fundo) 100%);
     border-bottom:1px solid var(--linha); padding:26px 30px 22px;
+    position:relative;
+  }
+  /* Faixa da marca: violeta ao ceu, a mesma sequencia do site. */
+  .capa::before {
+    content:""; position:absolute; left:0; right:0; top:0; height:3px;
+    background:linear-gradient(90deg,var(--violet),var(--indigo),
+      var(--periwinkle),var(--blue),var(--sky));
   }
   .capa-topo { display:flex; justify-content:space-between; align-items:flex-start;
                gap:20px; flex-wrap:wrap; max-width:1520px; margin:0 auto; }
   h1 { font-size:23px; margin:0; font-weight:650; letter-spacing:-.3px; }
   .sub { color:var(--suave); font-size:13px; margin-top:5px; }
-  .selo { display:inline-flex; align-items:center; gap:7px; background:rgba(47,214,160,.10);
-          border:1px solid rgba(47,214,160,.32); color:var(--verde);
+  .selo { display:inline-flex; align-items:center; gap:7px; background:rgba(102,147,248,.12);
+          border:1px solid rgba(102,147,248,.38); color:var(--blue);
           padding:6px 13px; border-radius:99px; font-size:12.5px; font-weight:600; }
   main { padding:22px 30px 70px; max-width:1520px; margin:0 auto; }
 
   .filtros { display:flex; gap:13px; flex-wrap:wrap; align-items:end;
              background:var(--painel); border:1px solid var(--linha);
-             border-radius:13px; padding:15px 17px; margin-bottom:22px; }
+             border-radius:var(--r-surf); padding:15px 17px; margin-bottom:22px; }
   .filtros label { display:block; font-size:11.5px; color:var(--suave);
                    margin-bottom:6px; text-transform:uppercase; letter-spacing:.5px; }
   select, input { background:var(--fundo); color:var(--texto); border:1px solid var(--linha);
-                  border-radius:9px; padding:9px 11px; font-size:14px; min-width:172px; }
+                  border-radius:var(--r-ctrl); padding:9px 15px; font-size:14px; min-width:172px; }
   select:focus, input:focus { outline:none; border-color:var(--azul); }
-  button { background:var(--azul); color:#04182b; border:0; border-radius:9px;
-           padding:9px 17px; font-size:14px; font-weight:650; cursor:pointer; }
+  button { background:var(--violet); color:var(--paper); border:0; border-radius:var(--r-ctrl);
+           padding:9px 19px; font-size:14px; font-weight:650; cursor:pointer; }
   button.limpar { background:transparent; color:var(--suave); border:1px solid var(--linha); }
   button.limpar:hover { color:var(--texto); border-color:var(--azul); }
 
   .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(196px,1fr));
            gap:14px; margin-bottom:24px; }
   .card { background:linear-gradient(160deg,var(--painel2),var(--painel));
-          border:1px solid var(--linha); border-radius:13px; padding:16px 18px;
+          border:1px solid var(--linha); border-radius:var(--r-surf); padding:16px 18px;
           position:relative; overflow:hidden; }
   .card::after { content:""; position:absolute; left:0; top:0; bottom:0; width:3px;
                  background:var(--cor,var(--azul)); }
@@ -77,7 +97,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .painel[hidden] { display:none; }
   .grade { display:grid; grid-template-columns:repeat(auto-fit,minmax(430px,1fr)); gap:18px; }
   .bloco { background:var(--painel); border:1px solid var(--linha);
-           border-radius:13px; padding:18px 20px; }
+           border-radius:var(--r-surf); padding:18px 20px; }
   .bloco.largo { grid-column:1/-1; }
   h2 { font-size:15.5px; margin:0 0 4px; font-weight:640; }
   .legenda { color:var(--suave); font-size:12.5px; margin-bottom:15px; }
@@ -86,14 +106,24 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   th,td { text-align:left; padding:9px 10px; border-bottom:1px solid var(--linha); white-space:nowrap; }
   th { color:var(--suave); font-weight:640; font-size:11.5px;
        text-transform:uppercase; letter-spacing:.5px; }
-  tbody tr:hover { background:rgba(78,163,255,.05); }
+  tbody tr:hover { background:rgba(102,147,248,.07); }
   td.num,th.num { text-align:right; font-variant-numeric:tabular-nums; }
   .rolagem { overflow-x:auto; }
   .neg { color:var(--verde); font-weight:600; } .pos { color:var(--vermelho); font-weight:600; }
   .tag { font-size:11px; padding:3px 9px; border-radius:99px; font-weight:600;
          border:1px solid var(--linha); color:var(--suave); }
-  .tag.COMPATIVEL { color:var(--verde); border-color:rgba(47,214,160,.4); background:rgba(47,214,160,.08); }
-  .tag.SIMILAR { color:var(--amarelo); border-color:rgba(255,200,97,.4); background:rgba(255,200,97,.08); }
+  .tag.COMPATIVEL { color:var(--verde); border-color:rgba(61,220,151,.42); background:rgba(61,220,151,.10); }
+  .tag.SIMILAR { color:var(--periwinkle); border-color:rgba(108,102,243,.45); background:rgba(108,102,243,.12); }
+  .tag.DIVERGENTE { color:var(--vermelho); border-color:rgba(255,107,122,.4); background:rgba(255,107,122,.08); }
+  /* Preco fora da faixa do proprio SKU. Marcado, nunca removido: quem le
+     precisa ver que a oferta existe e por que ela e suspeita. */
+  .alerta { font-size:11px; padding:2px 8px; border-radius:var(--r-ctrl);
+            font-weight:650; margin-left:7px; white-space:nowrap; }
+  .alerta.abaixo { color:var(--amarelo); background:rgba(255,200,97,.12);
+                   border:1px solid rgba(255,200,97,.4); }
+  .alerta.acima { color:var(--vermelho); background:rgba(255,107,122,.12);
+                  border:1px solid rgba(255,107,122,.4); }
+  tr.suspeita td { background:rgba(255,200,97,.045); }
   .vazio { color:var(--suave); padding:34px; text-align:center; }
   svg { display:block; width:100%; height:auto; }
   a { color:var(--azul); text-decoration:none; } a:hover { text-decoration:underline; }
@@ -131,7 +161,12 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <div><label>Fabricante</label><select id="f-marca"></select></div>
     <div><label>Produto</label><select id="f-produto"></select></div>
     <div><label>Loja</label><select id="f-loja"></select></div>
-    <div><label>Classificação</label><select id="f-classe"></select></div>
+    <div><label>Status</label><select id="f-classe"></select></div>
+    <div><label>Preço</label><select id="f-alerta">
+      <option value="">Todos</option>
+      <option value="alerta">Só os fora da faixa</option>
+      <option value="ok">Só os dentro da faixa</option>
+    </select></div>
     <div><label>Preço máximo</label><input id="f-preco" type="number" min="0" placeholder="sem limite"></div>
     <button class="limpar" id="limpar">Limpar filtros</button>
   </div>
@@ -249,7 +284,7 @@ const marcaPorProduto = {};
 DADOS.produtos.forEach(p => { marcaPorProduto[p.produto] = p.marca || "Sem fabricante"; });
 DADOS.ofertas.forEach(o => { if (!o.marca) o.marca = marcaPorProduto[o.produto] || "Sem fabricante"; });
 
-const filtros = {marca:"",produto:"",loja:"",fonte:"",classe:"",preco:""};
+const filtros = {marca:"",produto:"",loja:"",fonte:"",classe:"",preco:"",alerta:""};
 
 const ofertasFiltradas = () => DADOS.ofertas.filter(o =>
   o.preco != null &&
@@ -258,6 +293,7 @@ const ofertasFiltradas = () => DADOS.ofertas.filter(o =>
   (!filtros.loja    || (o.loja || "Loja não informada") === filtros.loja) &&
   (!filtros.fonte   || o.fonte === filtros.fonte) &&
   (!filtros.classe  || o.classificacao === filtros.classe) &&
+  (!filtros.alerta  || (filtros.alerta === "alerta" ? !!o.alerta_preco : !o.alerta_preco)) &&
   (!filtros.preco   || o.preco <= Number(filtros.preco)));
 
 function estatistica(valores) {
@@ -275,10 +311,10 @@ const agrupa = (lista,chave) => lista.reduce((mapa,item) => {
   const k = chave(item) || "Sem identificacao"; (mapa[k] = mapa[k] || []).push(item); return mapa;
 }, {});
 
-function preencheSelect(id,valores,rotulo) {
+function preencheSelect(id,valores,rotulo,formata) {
   document.getElementById(id).innerHTML =
     `<option value="">${rotulo}</option>` +
-    valores.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join("");
+    valores.map(v=>`<option value="${esc(v)}">${formata?formata(v):esc(v)}</option>`).join("");
 }
 const unicos = (l,c) => [...new Set(l.map(c).filter(Boolean))].sort();
 
@@ -322,13 +358,27 @@ function faixaPrecos(linhas) {
     <span style="color:#4ea3ff">▬</span> metade central das ofertas</div>`;
 }
 
-function tabela(id,colunas,linhas) {
+function tabela(id,colunas,linhas,classeLinha) {
   const alvo = document.getElementById(id);
   if (!alvo) return;
   if (!linhas.length) { alvo.innerHTML = `<tr><td class="vazio">Sem dados no recorte.</td></tr>`; return; }
   alvo.innerHTML =
     "<thead><tr>" + colunas.map(c=>`<th class="${c.num?'num':''}">${c.titulo}</th>`).join("") + "</tr></thead>" +
-    "<tbody>" + linhas.map((l,i)=>"<tr>" + colunas.map(c=>`<td class="${c.num?'num':''}">${c.valor(l,i)}</td>`).join("") + "</tr>").join("") + "</tbody>";
+    "<tbody>" + linhas.map((l,i)=>`<tr class="${classeLinha?classeLinha(l):''}">` + colunas.map(c=>`<td class="${c.num?'num':''}">${c.valor(l,i)}</td>`).join("") + "</tr>").join("") + "</tbody>";
+}
+
+// COMPATIVEL e SIMILAR sao os nomes internos; na tela eles precisam dizer o
+// que significam para quem compra, nao como o codigo classifica.
+const ROTULOS_CLASSE = {
+  COMPATIVEL:"Exato", SIMILAR:"Similar", DIVERGENTE:"Divergente",
+};
+function rotuloClasse(valor) {
+  return esc(ROTULOS_CLASSE[(valor||"").toUpperCase()] || "sem classificação");
+}
+function marcaAlerta(o) {
+  if (!o.alerta_preco) return "";
+  const texto = o.alerta_preco==="abaixo" ? "muito abaixo" : "muito acima";
+  return `<span class="alerta ${esc(o.alerta_preco)}" title="Fora da faixa dos demais preços deste SKU">${texto}</span>`;
 }
 
 function render() {
@@ -356,6 +406,11 @@ function render() {
     {rotulo:"Maior preço",valor:geral?brl(geral.max):"-",nota:"teto do recorte",cor:"var(--vermelho)"},
     {rotulo:"Economia possível",valor:brl(economiaTotal),nota:"mediana menos melhor oferta",cor:"var(--verde)"},
     {rotulo:"Dispersão",valor:geral?pct(geral.cv):"-",nota:"variação dos preços",cor:"var(--roxo)"},
+    {rotulo:"Exatos / Similares",
+     valor:`${ofertas.filter(o=>o.classificacao==="COMPATIVEL").length} / ${ofertas.filter(o=>o.classificacao==="SIMILAR").length}`,
+     nota:"similar = mesma função e voltagem",cor:"var(--periwinkle)"},
+    {rotulo:"Preços a conferir",valor:ofertas.filter(o=>o.alerta_preco).length,
+     nota:"fora da faixa do próprio SKU",cor:"var(--amarelo)"},
   ].map(c=>`<div class="card" style="--cor:${c.cor}"><div class="rotulo">${c.rotulo}</div>
      <div class="valor">${c.valor}</div><div class="nota">${c.nota}</div></div>`).join("");
 
@@ -454,9 +509,14 @@ function render() {
     {titulo:"Fabricante",valor:o=>esc(o.marca)},
     {titulo:"Loja",valor:o=>o.loja_preferida
       ? `<span class="preferida">${esc(o.loja||"sem loja")}</span>` : esc(o.loja||"sem loja")},
-    {titulo:"Classe",valor:o=>`<span class="tag ${esc(o.classificacao||"")}">${esc(o.classificacao||"nao classificado")}</span>`},
-    {titulo:"Preço",num:true,valor:o=>brl(o.preco)},
-  ],[...ofertas].sort((a,b)=>a.preco-b.preco).slice(0,500));
+    {titulo:"Status",valor:o=>`<span class="tag ${esc(o.classificacao||"")}">${rotuloClasse(o.classificacao)}</span>`},
+    {titulo:"Preço",num:true,valor:o=>`${brl(o.preco)}${marcaAlerta(o)}`},
+    {titulo:"vs mediana",num:true,valor:o=>o.desvio_mediana_pct===null
+      || o.desvio_mediana_pct===undefined ? "—"
+      : `<span class="${o.desvio_mediana_pct>0?'pos':'neg'}">${
+          o.desvio_mediana_pct>0?"+":""}${o.desvio_mediana_pct.toFixed(1)}%</span>`},
+  ],[...ofertas].sort((a,b)=>a.preco-b.preco).slice(0,500),
+    o=>o.alerta_preco?"suspeita":"");
 
   renderHistorico();
 }
@@ -504,10 +564,10 @@ function renderHistorico() {
 preencheSelect("f-marca",unicos(DADOS.ofertas,o=>o.marca),"Todos os fabricantes");
 preencheSelect("f-produto",unicos(DADOS.ofertas,o=>o.produto),"Todos os produtos");
 preencheSelect("f-loja",unicos(DADOS.ofertas,o=>o.loja),"Todas as lojas");
-preencheSelect("f-classe",unicos(DADOS.ofertas,o=>o.classificacao),"Todas");
+preencheSelect("f-classe",unicos(DADOS.ofertas,o=>o.classificacao),"Todos",rotuloClasse);
 
 const ligacoes = {"f-marca":"marca","f-produto":"produto","f-loja":"loja",
-                  "f-classe":"classe","f-preco":"preco"};
+                  "f-classe":"classe","f-alerta":"alerta","f-preco":"preco"};
 Object.entries(ligacoes).forEach(([id,campo]) =>
   document.getElementById(id).addEventListener("input",e=>{filtros[campo]=e.target.value;render();}));
 document.getElementById("limpar").addEventListener("click",()=>{

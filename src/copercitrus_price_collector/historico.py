@@ -8,11 +8,11 @@ historica nao da para dizer se um preco subiu, caiu ou sempre foi assim.
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .analytics import build_price_statistics
+from .armazenamento import Banco, disponivel
 from .models import CollectionRow
 
 
@@ -77,6 +77,25 @@ CREATE INDEX IF NOT EXISTS idx_hist_est_sku ON historico_estatisticas (sku);
 """
 
 
+# Colunas acrescentadas depois que a primeira base ja estava em uso. Bases
+# antigas nao as tem, e o painel le todas: sem isso a leitura falha com
+# "no such column" numa base que so precisava de um ALTER.
+COLUNAS_TARDIAS = (
+    ("historico_ofertas", "loja_preferida", "INTEGER"),
+    ("historico_ofertas", "classificacao", "TEXT"),
+    ("historico_ofertas", "similaridade", "REAL"),
+    ("historico_ofertas", "url", "TEXT"),
+    ("historico_ofertas", "marca", "TEXT"),
+)
+
+
+def preparar(banco: Banco) -> None:
+    """Cria o que falta e completa base antiga com as colunas novas."""
+    banco.criar(SCHEMA)
+    for tabela, coluna, tipo in COLUNAS_TARDIAS:
+        banco.garantir_coluna(tabela, coluna, tipo)
+
+
 def append_run(
     rows: list[CollectionRow],
     path: str | Path,
@@ -84,8 +103,6 @@ def append_run(
     fontes: str | None = None,
 ) -> int:
     """Acrescenta uma execucao ao historico e devolve o id gravado."""
-    destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
     momento = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     dia = momento[:10]
     produtos = {(row.product.sku, row.product.produto) for row in rows}
@@ -93,19 +110,18 @@ def append_run(
         row for row in rows if row.result is not None and row.result.price_min is not None
     ]
 
-    connection = sqlite3.connect(destination)
+    banco = Banco(path)
     try:
-        connection.executescript(SCHEMA)
-        cursor = connection.execute(
+        preparar(banco)
+        execucao_id = banco.inserir_e_devolver_id(
             "INSERT INTO execucoes (executado_em, planilha, fontes, produtos, ofertas) "
             "VALUES (?, ?, ?, ?, ?)",
             (momento, planilha, fontes, len(produtos), len(com_preco)),
         )
-        execucao_id = cursor.lastrowid
 
         # INSERT OR IGNORE + indice unico: reexecutar a mesma busca no mesmo dia
         # atualiza o painel sem duplicar linha.
-        connection.executemany(
+        banco.executar_muitos(
             "INSERT OR IGNORE INTO historico_ofertas (execucao_id, coletado_em, dia, "
             "sku, produto, marca, fonte, loja, titulo, preco, classificacao, "
             "similaridade, loja_preferida, url) "
@@ -131,9 +147,16 @@ def append_run(
             ],
         )
 
-        # A estatistica do dia e substituida, nao acumulada: uma medicao por dia.
-        connection.executemany(
-            "INSERT OR REPLACE INTO historico_estatisticas (execucao_id, coletado_em, "
+        # Uma medicao por dia: a do dia e apagada antes de entrar a nova.
+        # Substituir com INSERT OR REPLACE so existe no SQLite; apagar antes
+        # da o mesmo resultado e vale nos dois bancos.
+        estatisticas = build_price_statistics(rows)
+        banco.executar_muitos(
+            "DELETE FROM historico_estatisticas WHERE dia = ? AND sku = ?",
+            [(dia, entry["sku"]) for entry in estatisticas],
+        )
+        banco.executar_muitos(
+            "INSERT INTO historico_estatisticas (execucao_id, coletado_em, "
             "dia, sku, produto, n_ofertas, n_lojas, menor_preco, mediana, maior_preco, "
             "preco_medio, coeficiente_variacao) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -152,44 +175,40 @@ def append_run(
                     entry["preco_medio"],
                     entry["coeficiente_variacao"],
                 )
-                for entry in build_price_statistics(rows)
+                for entry in estatisticas
             ],
         )
-        connection.commit()
+        banco.confirmar()
         return execucao_id
     finally:
-        connection.close()
+        banco.fechar()
 
 
 def load_history(path: str | Path) -> dict:
     """Le o historico para alimentar a area de evolucao do dashboard."""
-    source = Path(path)
-    if not source.is_file():
+    if not disponivel(path):
         return {"execucoes": [], "series": [], "variacoes": []}
 
-    connection = sqlite3.connect(source)
-    connection.row_factory = sqlite3.Row
+    banco = Banco(path)
     try:
-        execucoes = [
-            dict(row)
-            for row in connection.execute(
-                "SELECT id, executado_em, planilha, fontes, produtos, ofertas "
-                "FROM execucoes ORDER BY id"
-            )
-        ]
-        series = [
-            dict(row)
-            for row in connection.execute(
-                "SELECT sku, produto, dia AS coletado_em, n_ofertas, n_lojas, "
-                "menor_preco, mediana, maior_preco, preco_medio, "
-                "coeficiente_variacao FROM historico_estatisticas "
-                "ORDER BY sku, dia"
-            )
-        ]
-        variacoes = _price_changes(connection)
-        return {"execucoes": execucoes, "series": series, "variacoes": variacoes}
+        preparar(banco)
+        execucoes = banco.consultar(
+            "SELECT id, executado_em, planilha, fontes, produtos, ofertas "
+            "FROM execucoes ORDER BY id"
+        )
+        series = banco.consultar(
+            "SELECT sku, produto, dia AS coletado_em, n_ofertas, n_lojas, "
+            "menor_preco, mediana, maior_preco, preco_medio, "
+            "coeficiente_variacao FROM historico_estatisticas "
+            "ORDER BY sku, dia"
+        )
+        return {
+            "execucoes": execucoes,
+            "series": series,
+            "variacoes": _price_changes(banco),
+        }
     finally:
-        connection.close()
+        banco.fechar()
 
 
 def load_offers(path: str | Path) -> list[dict]:
@@ -199,33 +218,33 @@ def load_offers(path: str | Path) -> list[dict]:
     historico deduplicado, entao o painel reflete tudo o que ja foi coletado
     em vez de so o ultimo lote.
     """
-    source = Path(path)
-    if not source.is_file():
+    if not disponivel(path):
         return []
-    connection = sqlite3.connect(source)
-    connection.row_factory = sqlite3.Row
+    banco = Banco(path)
     try:
-        return [
-            dict(row)
-            for row in connection.execute(
-                "SELECT sku, produto, marca, fonte, loja, titulo AS titulo, "
-                "preco, classificacao, similaridade, loja_preferida, url, dia, "
-                "MAX(coletado_em) AS coletado_em "
-                "FROM historico_ofertas WHERE preco IS NOT NULL "
-                "GROUP BY sku, fonte, loja, titulo "
-                "ORDER BY produto, preco"
-            )
-        ]
+        preparar(banco)
+        # Agrupar por todas as colunas lidas: o SQLite aceita coluna solta no
+        # SELECT com GROUP BY, o PostgreSQL recusa. Como a chave ja e unica
+        # por dia, agrupar por tudo devolve as mesmas linhas nos dois.
+        return banco.consultar(
+            "SELECT sku, produto, marca, fonte, loja, titulo, preco, "
+            "classificacao, similaridade, loja_preferida, url, dia, "
+            "MAX(coletado_em) AS coletado_em "
+            "FROM historico_ofertas WHERE preco IS NOT NULL "
+            "GROUP BY sku, produto, marca, fonte, loja, titulo, preco, "
+            "classificacao, similaridade, loja_preferida, url, dia "
+            "ORDER BY produto, preco"
+        )
     finally:
-        connection.close()
+        banco.fechar()
 
 
-def _price_changes(connection: sqlite3.Connection) -> list[dict]:
+def _price_changes(banco: Banco) -> list[dict]:
     """Diferenca entre a ultima e a penultima medicao de cada SKU."""
-    rows = connection.execute(
+    rows = banco.consultar(
         "SELECT sku, produto, dia AS coletado_em, menor_preco, mediana "
         "FROM historico_estatisticas ORDER BY sku, dia"
-    ).fetchall()
+    )
     por_sku: dict[str, list] = {}
     for row in rows:
         por_sku.setdefault(row["sku"], []).append(row)

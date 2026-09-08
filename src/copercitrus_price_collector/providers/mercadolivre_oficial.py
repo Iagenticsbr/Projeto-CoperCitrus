@@ -154,6 +154,25 @@ class MercadoLivreOficialProvider:
             base = min(base + 15.0, 100.0)
         return round(base, 1)
 
+    @staticmethod
+    def _endereco(produto: dict, item: dict) -> str:
+        """Endereco do anuncio, sem inventar formato de URL.
+
+        A versao anterior montava `MLB-1234567890` cortando o identificador
+        em duas partes. O endereco ate abria, mas era um palpite sobre o
+        formato do Mercado Livre e nao havia como conferir se levava ao
+        anuncio certo. Aqui a ordem e: o permalink que a API devolver; senao
+        a pagina do produto no catalogo, que e exatamente o produto cujo nome
+        aparece no painel. Palpite, nenhum.
+        """
+        permalink = item.get("permalink") or item.get("item_permalink")
+        if isinstance(permalink, str) and permalink.startswith("http"):
+            return permalink
+        identificador = produto.get("id")
+        if identificador:
+            return f"https://www.mercadolivre.com.br/p/{identificador}"
+        return ""
+
     def _mapear(
         self,
         produto: dict,
@@ -169,7 +188,6 @@ class MercadoLivreOficialProvider:
             for entrada in produto.get("attributes", [])
         }
         cheio = item.get("original_price")
-        identificador = item.get("item_id") or item.get("id") or ""
         imagens = produto.get("pictures") or []
         return SearchResult(
             provider=self.name,
@@ -181,14 +199,7 @@ class MercadoLivreOficialProvider:
             price_min=round(preco, 2),
             price_max=round(float(cheio), 2) if isinstance(cheio, (int, float)) and cheio > preco else round(preco, 2),
             currency=item.get("currency_id") or "BRL",
-            # O identificador do anuncio monta a URL publica; o catalogo nao
-            # devolve permalink para quem nao tem parceria.
-            purchase_url=(
-                f"https://produto.mercadolivre.com.br/"
-                f"{identificador[:3]}-{identificador[3:]}"
-                if identificador
-                else ""
-            ),
+            purchase_url=self._endereco(produto, item),
             brand=atributos.get("BRAND") or None,
             package_quantity=extract_package_quantity(nome),
             similarity_score=pontuacao,

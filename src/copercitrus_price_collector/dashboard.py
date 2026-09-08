@@ -15,6 +15,11 @@ from pathlib import Path
 from .errors import ConfigurationError
 from .dashboard_template import HTML_TEMPLATE
 from .historico import load_history, load_offers
+from .validacao import (
+    marcar_discrepancias,
+    resumo_classificacao,
+    resumo_discrepancias,
+)
 
 
 def _read_table(connection: sqlite3.Connection, table: str) -> list[dict]:
@@ -75,6 +80,12 @@ def collect_dashboard_data(
         dados["origem"] = "historico acumulado"
     else:
         dados["origem"] = "ultima coleta"
+
+    # Marcar antes de servir: o painel mostra a oferta suspeita junto das
+    # outras, sinalizada, em vez de escondê-la ou de deixá-la passar limpa.
+    dados["ofertas"] = marcar_discrepancias(dados["ofertas"])
+    dados["alertas"] = resumo_discrepancias(dados["ofertas"])
+    dados["classificacao"] = resumo_classificacao(dados["ofertas"])
     return dados
 
 

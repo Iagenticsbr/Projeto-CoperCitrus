@@ -130,3 +130,91 @@ class FiltroTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DiscrepanciaTest(unittest.TestCase):
+    def _ofertas(self, *precos, sku="A"):
+        return [{"sku": sku, "preco": preco} for preco in precos]
+
+    def test_price_far_below_the_median_is_flagged(self):
+        from copercitrus_price_collector.validacao import marcar_discrepancias
+
+        marcadas = marcar_discrepancias(self._ofertas(500, 520, 540, 12))
+
+        self.assertEqual("abaixo", marcadas[-1]["alerta_preco"])
+        self.assertEqual("", marcadas[0]["alerta_preco"])
+
+    def test_price_far_above_the_median_is_flagged(self):
+        from copercitrus_price_collector.validacao import marcar_discrepancias
+
+        marcadas = marcar_discrepancias(self._ofertas(500, 520, 540, 4000))
+
+        self.assertEqual("acima", marcadas[-1]["alerta_preco"])
+
+    def test_normal_spread_is_not_flagged(self):
+        from copercitrus_price_collector.validacao import marcar_discrepancias
+
+        marcadas = marcar_discrepancias(self._ofertas(475, 499, 556, 589, 692))
+
+        self.assertEqual([""] * 5, [item["alerta_preco"] for item in marcadas])
+
+    def test_a_single_offer_cannot_be_judged(self):
+        """Sem outra oferta do mesmo SKU nao ha com o que comparar."""
+        from copercitrus_price_collector.validacao import marcar_discrepancias
+
+        marcadas = marcar_discrepancias(self._ofertas(500))
+
+        self.assertEqual("", marcadas[0]["alerta_preco"])
+
+    def test_skus_are_judged_separately(self):
+        from copercitrus_price_collector.validacao import marcar_discrepancias
+
+        ofertas = self._ofertas(50, 55, 60, sku="barato") + self._ofertas(
+            5000, 5200, 5400, sku="caro"
+        )
+
+        marcadas = marcar_discrepancias(ofertas)
+
+        self.assertEqual([""] * 6, [item["alerta_preco"] for item in marcadas])
+
+    def test_deviation_from_the_median_is_reported(self):
+        from copercitrus_price_collector.validacao import marcar_discrepancias
+
+        marcadas = marcar_discrepancias(self._ofertas(100, 200, 300))
+
+        self.assertEqual(-50.0, marcadas[0]["desvio_mediana_pct"])
+        self.assertEqual(50.0, marcadas[2]["desvio_mediana_pct"])
+
+    def test_classification_counts_reach_the_panel(self):
+        from copercitrus_price_collector.validacao import resumo_classificacao
+
+        contagem = resumo_classificacao(
+            [
+                {"classificacao": "COMPATIVEL"},
+                {"classificacao": "similar"},
+                {"classificacao": None},
+            ]
+        )
+
+        self.assertEqual(1, contagem["COMPATIVEL"])
+        self.assertEqual(1, contagem["SIMILAR"])
+        self.assertEqual(1, contagem["SEM CLASSE"])
+
+    def test_a_common_discount_is_not_an_alert(self):
+        """13% abaixo da mediana e desconto de loja, nao erro de coleta."""
+        from copercitrus_price_collector.validacao import marcar_discrepancias
+
+        marcadas = marcar_discrepancias(
+            self._ofertas(432.16, 495.00, 499.55, 509.90, 511.48)
+        )
+
+        self.assertEqual([""] * 5, [item["alerta_preco"] for item in marcadas])
+
+    def test_a_price_a_fifth_of_the_median_is_still_an_alert(self):
+        from copercitrus_price_collector.validacao import marcar_discrepancias
+
+        marcadas = marcar_discrepancias(
+            self._ofertas(113.05, 386.01, 475.00, 499.00, 556.00)
+        )
+
+        self.assertEqual("abaixo", marcadas[0]["alerta_preco"])
