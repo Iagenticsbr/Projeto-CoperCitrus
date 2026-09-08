@@ -32,6 +32,7 @@ RUN pip install --no-cache-dir --break-system-packages \
         "fastapi>=0.115,<1" \
         "uvicorn[standard]>=0.32,<1" \
         "python-multipart>=0.0.9" \
+        "psycopg[binary]>=3.2,<4" \
     && pip install --no-cache-dir --break-system-packages --no-deps .
 
 # Roda como root: o volume do Railway e montado com dono root e um usuario
