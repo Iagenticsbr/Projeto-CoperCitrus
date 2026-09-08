@@ -16,6 +16,7 @@ erros de casamento deste projeto.
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,9 +25,12 @@ from ..errors import ConfigurationError, ProviderError
 from ..models import ProductInput, SearchResult
 from ..product_analysis import (
     classificar_oferta,
+    codigos_de_modelo,
+    descricao_efetiva,
     extract_package_quantity,
     normalize_text,
     similarity_score,
+    termos_de_funcao,
 )
 
 
@@ -37,6 +41,16 @@ TEMPO_LIMITE_SEGUNDOS = 45
 # alvo deixa de ser um produto so: os modelos vizinhos da mesma familia estao
 # justamente nas posicoes seguintes da busca do catalogo.
 PRODUTOS_POR_CONSULTA = 8
+
+# Unidade de medida colada no numero tem forma de codigo de modelo, mas
+# procurar por "900w" ou "20v" devolve o catalogo inteiro.
+_UNIDADES = ("w", "v", "a", "ah", "mm", "cm", "kg", "ml", "l", "psi", "rpm",
+             "pcs", "nm", "pol", "cv", "hp", "lbs")
+
+
+def _e_especificacao(token: str) -> bool:
+    """Diz se o token e medida, nao identificacao de modelo."""
+    return bool(re.fullmatch(r"\d+(?:" + "|".join(_UNIDADES) + r")", token))
 
 
 class MercadoLivreOficialProvider:
@@ -85,18 +99,77 @@ class MercadoLivreOficialProvider:
             raise ProviderError(f"{self.name}: resposta nao e JSON") from exc
 
     def search(self, product: ProductInput, limit: int) -> list[SearchResult]:
-        catalogo = self._get(
-            "/products/search",
-            {"status": "active", "site_id": "MLB", "q": product.query},
+        """Procura o produto no catalogo, da consulta mais especifica a mais ampla.
+
+        Uma consulta so nao serve. A busca do catalogo pondera o texto inteiro,
+        entao a descricao completa da planilha afoga o codigo do modelo: com
+        "INVERSOR digital MASCARA automatica IM125 VONDER" o produto certo nao
+        aparecia, e com "IM125" ele e o primeiro resultado. O mesmo valeu para
+        CIV200B. Eram quatro SKUs dados como inexistentes no catalogo que na
+        verdade estavam la.
+        """
+        # Reunir os candidatos de todas as consultas antes de buscar preco.
+        # Parar na primeira consulta que enchesse o limite gastava as vagas com
+        # o resultado ruim da consulta mais especifica e nunca chegava na
+        # consulta que achava o produto certo.
+        candidatos: dict[str, dict] = {}
+        for consulta in self._consultas(product):
+            catalogo = self._get(
+                "/products/search",
+                {"status": "active", "site_id": "MLB", "q": consulta},
+            )
+            for produto in (catalogo.get("results") or [])[:PRODUTOS_POR_CONSULTA]:
+                identificador = produto.get("id")
+                if identificador:
+                    candidatos.setdefault(identificador, produto)
+
+        # Buscar oferta so dos melhores: cada produto custa uma chamada extra,
+        # e o catalogo devolve muito parente distante.
+        avaliados = sorted(
+            (
+                (self._pontuar(product, produto, (produto.get("name") or "")), produto)
+                for produto in candidatos.values()
+            ),
+            key=lambda par: par[0],
+            reverse=True,
         )
         resultados: list[SearchResult] = []
-        for produto in (catalogo.get("results") or [])[:PRODUTOS_POR_CONSULTA]:
+        for _, produto in avaliados[:PRODUTOS_POR_CONSULTA]:
             if len(resultados) >= limit:
                 break
             resultados.extend(
                 self._ofertas_do_produto(product, produto, limit - len(resultados))
             )
         return resultados
+
+    @staticmethod
+    def _consultas(product: ProductInput) -> list[str]:
+        """Variantes de consulta, da mais discriminante para a mais ampla."""
+        descricao = descricao_efetiva(product)
+        marca = (product.marca or "").split()[0].strip()
+        codigos = [
+            codigo
+            for codigo in codigos_de_modelo(f"{descricao} {product.modelo or ''}")
+            if not _e_especificacao(codigo)
+        ]
+        variantes: list[str] = []
+        # Codigo primeiro, sozinho: e o termo que identifica o modelo exato.
+        for codigo in sorted(codigos, key=len, reverse=True):
+            variantes.append(codigo.upper())
+            if marca:
+                variantes.append(f"{codigo.upper()} {marca}")
+        variantes.append(product.query)
+        # Por ultimo a funcao com a marca, que acha o parente quando o modelo
+        # exato nao esta catalogado.
+        funcao = " ".join(termos_de_funcao(descricao, product.marca))
+        if funcao:
+            variantes.append(f"{funcao} {marca}".strip())
+        vistas: set[str] = set()
+        return [
+            variante
+            for variante in variantes
+            if variante and not (variante.casefold() in vistas or vistas.add(variante.casefold()))
+        ]
 
     def _ofertas_do_produto(
         self, product: ProductInput, produto: dict, restantes: int

@@ -509,6 +509,12 @@ def termos_de_funcao(produto: str | None, marca: str | None = None) -> list[str]
     for token in match_tokens(produto):
         if token in da_marca or token in STOP_WORDS:
             continue
+        # "bivolt" e alfabetico e longo, entao entrava como se dissesse o que o
+        # produto e. Nao diz: e alimentacao, e o anuncio quase nunca repete a
+        # palavra. Uma chave de impacto Vonder deixava de casar com uma chave
+        # de impacto Vonder por causa disso.
+        if token in BIVOLT or token in PALAVRAS_DE_ALIMENTACAO:
+            continue
         if any(c.isdigit() for c in token) or len(token) < 4:
             continue
         termos.append(token)
@@ -524,6 +530,30 @@ def mesma_funcao(produto: ProductInput, titulo: str) -> bool:
         return False
     do_titulo = set(match_tokens(titulo))
     return all(termo in do_titulo for termo in termos)
+
+
+# Medida colada no numero tem forma de codigo ("900w", "300nm", "110pcs").
+UNIDADES = (
+    "w", "v", "a", "ah", "mm", "cm", "kg", "ml", "l", "psi", "rpm", "pcs",
+    "nm", "pol", "cv", "hp", "lbs", "pes", "litros",
+)
+PALAVRAS_DE_ALIMENTACAO = {"bateria", "monofasico", "trifasico", "trifasica"}
+
+
+def e_especificacao(token: str) -> bool:
+    """Diz se o token e medida, nao identificacao de modelo."""
+    return bool(re.fullmatch(r"\d+(?:" + "|".join(UNIDADES) + r")", token))
+
+
+def codigo_forte(token: str) -> bool:
+    """Codigo especifico o bastante para identificar um modelo sozinho.
+
+    "civ200b" e "dwe4120b2b" identificam; "bat20v" nao — ele so diz que a
+    ferramenta e de bateria 20 V, e vale para a linha inteira do fabricante.
+    """
+    if e_especificacao(token):
+        return False
+    return bool(re.search(r"[a-z]", token) and re.search(r"\d{3}", token))
 
 
 def codigos_de_modelo(texto: str | None) -> set[str]:
@@ -607,6 +637,13 @@ def classificar_oferta(
     # J6600 e J7600 dividem nome, funcao e voltagem: a pontuacao de texto
     # sozinha dava 83% e chamava os dois de mesmo produto. Codigo declarado
     # nos dois lados e sem interseccao decide contra.
+    # Codigo forte identico nos dois lados e a evidencia mais direta que
+    # existe de que e o mesmo produto — mais confiavel que a cobertura de
+    # texto, que reprovava a CIV200B certa por o anuncio nao repetir "1/2",
+    # "BAT20V" e "BIVOLT" da descricao interna.
+    iguais = {codigo for codigo in pedidos & ofertados if codigo_forte(codigo)}
+    if iguais and mesma_embalagem(produto, titulo):
+        return "COMPATIVEL"
     outro_modelo = bool(pedidos and ofertados and not (pedidos & ofertados))
     # SKU identificado so pela categoria da planilha nao tem modelo conhecido:
     # da para afirmar que e uma lavadora Jacto, nao qual delas. Chamar de
