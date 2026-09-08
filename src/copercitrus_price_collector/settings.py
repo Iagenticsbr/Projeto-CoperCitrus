@@ -60,6 +60,8 @@ class Settings:
     apify_token: str | None
     ml_token: str | None
     similaridade_minima: float
+    # Similar = mesma funcao e mesma voltagem. Fora disso, nao entra.
+    incluir_similares: bool = False
 
     @classmethod
     def from_env(cls) -> Settings:

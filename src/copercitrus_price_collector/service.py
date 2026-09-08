@@ -21,6 +21,7 @@ class CollectionService:
         somente_exatos: bool = False,
         similaridade_minima: float = 70.0,
         somente_lojas_preferidas: bool = False,
+        incluir_similares: bool = False,
     ) -> None:
         self.providers = list(providers)
         self.result_limit = result_limit
@@ -29,6 +30,7 @@ class CollectionService:
         self.somente_exatos = somente_exatos
         self.similaridade_minima = similaridade_minima
         self.somente_lojas_preferidas = somente_lojas_preferidas
+        self.incluir_similares = incluir_similares
 
     def _filtrar(self, results: list) -> list:
         """Descarta o que nao e o produto pedido.
@@ -38,10 +40,14 @@ class CollectionService:
         e ruido, nao alternativa.
         """
         if self.somente_exatos:
+            # Similar aqui nao e "parecido": e mesma funcao e mesma voltagem,
+            # decidido pelo provedor. Sem esse criterio estreito, aceitar
+            # similar traria acessorio e outra categoria junto.
             results = [
                 item
                 for item in results
                 if item.similarity_score >= self.similaridade_minima
+                or (self.incluir_similares and item.match_type == "SIMILAR")
             ]
         if self.somente_lojas_preferidas:
             # Só os marketplaces escolhidos entram na base. Comparador e loja

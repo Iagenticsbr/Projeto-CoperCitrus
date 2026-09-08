@@ -23,7 +23,7 @@ import urllib.request
 from ..errors import ConfigurationError, ProviderError
 from ..models import ProductInput, SearchResult
 from ..product_analysis import (
-    classify_match,
+    classificar_oferta,
     extract_package_quantity,
     normalize_text,
     similarity_score,
@@ -33,8 +33,10 @@ from ..product_analysis import (
 BASE = "https://api.mercadolibre.com"
 TEMPO_LIMITE_SEGUNDOS = 45
 # Quantos produtos do catalogo abrir por consulta. Cada um custa uma chamada
-# extra para listar as ofertas, entao vale limitar.
-PRODUTOS_POR_CONSULTA = 4
+# extra para listar as ofertas, entao vale limitar. Com similares ligados o
+# alvo deixa de ser um produto so: os modelos vizinhos da mesma familia estao
+# justamente nas posicoes seguintes da busca do catalogo.
+PRODUTOS_POR_CONSULTA = 8
 
 
 class MercadoLivreOficialProvider:
@@ -103,16 +105,35 @@ class MercadoLivreOficialProvider:
         if not nome:
             return []
         pontuacao = self._pontuar(product, produto, nome)
+        classe = classificar_oferta(product, self._texto_do_catalogo(produto, nome), pontuacao)
         listagem = self._get(f"/products/{produto['id']}/items", {"limit": 10})
         ofertas: list[SearchResult] = []
         for posicao, item in enumerate((listagem.get("results") or []), 1):
             preco = item.get("price")
             if not isinstance(preco, (int, float)) or preco <= 0:
                 continue
-            ofertas.append(self._mapear(produto, item, nome, float(preco), pontuacao, posicao))
+            ofertas.append(
+                self._mapear(produto, item, nome, float(preco), pontuacao, classe, posicao)
+            )
             if len(ofertas) >= restantes:
                 break
         return ofertas
+
+    def _texto_do_catalogo(self, produto: dict, nome: str) -> str:
+        """Nome mais atributos, para julgar funcao e voltagem.
+
+        A voltagem raramente aparece no nome do catalogo; costuma estar em
+        atributo proprio. Sem juntar os dois, todo produto pareceria omissa
+        a voltagem e a regra nunca reprovaria nada.
+        """
+        atributos = produto.get("attributes", [])
+        extras = " ".join(
+            (item.get("value_name") or "")
+            for item in atributos
+            if item.get("id")
+            in {"BRAND", "MODEL", "VOLTAGE", "INPUT_VOLTAGE", "POWER"}
+        )
+        return f"{nome} {extras}".strip()
 
     def _pontuar(self, product: ProductInput, produto: dict, nome: str) -> float:
         """Similaridade usando os atributos do catalogo quando existem.
@@ -140,6 +161,7 @@ class MercadoLivreOficialProvider:
         nome: str,
         preco: float,
         pontuacao: float,
+        classe: str,
         posicao: int,
     ) -> SearchResult:
         atributos = {
@@ -170,7 +192,7 @@ class MercadoLivreOficialProvider:
             brand=atributos.get("BRAND") or None,
             package_quantity=extract_package_quantity(nome),
             similarity_score=pontuacao,
-            match_type=classify_match(pontuacao),
+            match_type=classe,
             seller=self.name,
             image_url=(imagens[0].get("url") if imagens and isinstance(imagens[0], dict) else None),
             loja_preferida=True,

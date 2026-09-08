@@ -159,7 +159,10 @@ def _parser() -> argparse.ArgumentParser:
     collect.add_argument(
         "--incluir-similares",
         action="store_true",
-        help="mantem tambem produtos parecidos na base",
+        help=(
+            "mantem tambem o similar de mesma funcao e mesma voltagem; "
+            "outra categoria e acessorio continuam fora"
+        ),
     )
     collect.add_argument(
         "--similaridade-minima",
@@ -354,7 +357,11 @@ def main(argv: list[str] | None = None) -> int:
                 "Use --somente-exatos ou --incluir-similares, nao os dois"
             )
         if args.incluir_similares:
-            settings = replace(settings, somente_exatos=False)
+            # O corte continua ligado: o que muda e que a classificacao
+            # SIMILAR passa a valer como aprovacao, ao lado da pontuacao.
+            settings = replace(
+                settings, somente_exatos=True, incluir_similares=True
+            )
         if args.somente_exatos:
             settings = replace(settings, somente_exatos=True)
         if args.lojas_preferidas:
@@ -402,6 +409,7 @@ def main(argv: list[str] | None = None) -> int:
                 somente_exatos=settings.somente_exatos,
                 similaridade_minima=settings.similaridade_minima,
                 somente_lojas_preferidas=settings.somente_lojas_preferidas,
+                incluir_similares=settings.incluir_similares,
             ).collect(products)
         finally:
             if precisa_navegador:

@@ -131,6 +131,7 @@ def executar_coleta(execucao: Execucao, caminho: Path, fontes: str, limite: int)
                 configuracao.request_delay_seconds,
                 somente_exatos=configuracao.somente_exatos,
                 similaridade_minima=configuracao.similaridade_minima,
+                incluir_similares=configuracao.incluir_similares,
                 somente_lojas_preferidas=configuracao.somente_lojas_preferidas,
             )
             linhas = servico.collect(produtos)

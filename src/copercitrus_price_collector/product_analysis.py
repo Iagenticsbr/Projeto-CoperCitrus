@@ -383,3 +383,109 @@ def classify_match(score: float) -> str:
     if score >= 50.0:
         return "SIMILAR"
     return "DIVERGENTE"
+
+
+# Voltagem declarada no texto. Rede (127/220/380) e bateria (12/18/20/24) sao
+# lidas juntas porque a planilha as escreve do mesmo jeito, mas comparadas so
+# entre iguais: 20V de bateria nao contradiz 220V de rede.
+VOLTAGENS_REDE = {"110", "127", "220", "380"}
+BIVOLT = {"bivolt", "biv"}
+
+
+def extrair_voltagem(texto: str | None) -> set[str]:
+    """Voltagens de rede declaradas no texto, ou {'bivolt'}."""
+    if not texto:
+        return set()
+    normalizado = normalize_text(texto)
+    if any(marca in normalizado for marca in BIVOLT):
+        return {"bivolt"}
+    achadas = set()
+    for numero in re.findall(r"\b(\d{3})\s*v\b", normalizado):
+        if numero in VOLTAGENS_REDE:
+            achadas.add(numero)
+    return achadas
+
+
+def voltagem_compativel(pedida: set[str], ofertada: set[str]) -> bool:
+    """Bivolt atende qualquer rede; ausencia de declaracao nao reprova.
+
+    Nao dava para exigir declaracao dos dois lados: muito anuncio omite a
+    voltagem, e reprovar por omissao descartaria oferta boa.
+    """
+    if not pedida or not ofertada:
+        return True
+    if "bivolt" in pedida or "bivolt" in ofertada:
+        return True
+    return bool(pedida & ofertada)
+
+
+def termos_de_funcao(produto: str | None, marca: str | None = None) -> list[str]:
+    """O que o produto e, sem marca, modelo nem especificacao numerica.
+
+    "LAVADORA ALTA PRESSAO J6600 220V" vira ["lavadora", "alta", "pressao"].
+    E isso que define se duas ofertas sao do mesmo tipo de equipamento.
+    """
+    da_marca = set(match_tokens(marca)) if marca else set()
+    termos = []
+    for token in match_tokens(produto):
+        if token in da_marca or token in STOP_WORDS:
+            continue
+        if any(c.isdigit() for c in token) or len(token) < 4:
+            continue
+        termos.append(token)
+        if len(termos) == 3:
+            break
+    return termos
+
+
+def mesma_funcao(produto: ProductInput, titulo: str) -> bool:
+    """O anuncio e do mesmo tipo de equipamento que o item pedido."""
+    termos = termos_de_funcao(produto.produto, produto.marca)
+    if not termos:
+        return False
+    do_titulo = set(match_tokens(titulo))
+    return all(termo in do_titulo for termo in termos)
+
+
+def codigos_de_modelo(texto: str | None) -> set[str]:
+    """Codigos alfanumericos do texto: J6600, DWE4120B2B, CIV200B.
+
+    Extraidos antes de tokenizar de proposito: `match_tokens` separa letra de
+    digito e transformaria DWE4120 em "dwe" + "4120", que casa com qualquer
+    outro DWE.
+    """
+    if not texto:
+        return set()
+    normalizado = normalize_text(texto.replace("-", " ").replace("/", " "))
+    return {
+        token
+        for token in re.findall(r"[a-z]+\d[a-z\d]*|\d+[a-z]+[a-z\d]*", normalizado)
+        # "220v" tem forma de codigo e aparecia em J6600 e J7600 igual, o que
+        # fazia dois modelos diferentes parecerem o mesmo produto.
+        if len(token) >= 4 and not re.fullmatch(r"\d{2,3}v", token)
+    }
+
+
+def classificar_oferta(
+    produto: ProductInput, titulo: str, pontuacao: float, corte_exato: float = 70.0
+) -> str:
+    """Classifica em COMPATIVEL, SIMILAR ou DIVERGENTE.
+
+    SIMILAR tem definicao estreita de proposito: mesma funcao e mesma
+    voltagem. Sem isso, "similar" viraria qualquer item da mesma marca — foi
+    assim que um pulverizador entrou como equivalente de uma lavadora.
+    """
+    pedidos = codigos_de_modelo(f"{produto.produto} {produto.modelo or ''}")
+    ofertados = codigos_de_modelo(titulo)
+    # J6600 e J7600 dividem nome, funcao e voltagem: a pontuacao de texto
+    # sozinha dava 83% e chamava os dois de mesmo produto. Codigo declarado
+    # nos dois lados e sem interseccao decide contra.
+    outro_modelo = bool(pedidos and ofertados and not (pedidos & ofertados))
+    if pontuacao >= corte_exato and not outro_modelo:
+        return "COMPATIVEL"
+    if mesma_funcao(produto, titulo) and voltagem_compativel(
+        extrair_voltagem(f"{produto.produto} {produto.modelo or ''}"),
+        extrair_voltagem(titulo),
+    ):
+        return "SIMILAR"
+    return "DIVERGENTE"
