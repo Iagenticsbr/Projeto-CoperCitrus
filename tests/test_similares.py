@@ -285,3 +285,92 @@ class CategoriaTest(unittest.TestCase):
         self.assertEqual(
             "DIVERGENTE", _classificar(produto, "Cilindro Pulverizador Costal Jacto PJH")
         )
+
+
+class MarcaEEmbalagemTest(unittest.TestCase):
+    """Casos reais da coleta de 08/09 que entraram errado."""
+
+    def _lavadora(self):
+        return ProductInput(
+            6, "LAVADORA ALTA PRESSAO J6600 127V", "Jacto", "1350766 JACTO"
+        )
+
+    def test_a_competing_brand_is_not_similar(self):
+        """Uma Karcher de R$ 2.550 entrou como similar de uma Jacto."""
+        produto = self._lavadora()
+
+        self.assertEqual(
+            "DIVERGENTE",
+            _classificar(produto, "Lavadora De Alta Pressao Karcher Hd-585"),
+        )
+
+    def test_the_same_brand_is_still_similar(self):
+        produto = self._lavadora()
+
+        self.assertEqual(
+            "SIMILAR",
+            _classificar(produto, "Lavadora Alta Pressao Residencial Stop Total Jacto"),
+        )
+
+    def test_an_offer_without_a_brand_is_not_rejected(self):
+        """Muito vendedor escreve so o modelo; reprovar por omissao perde oferta."""
+        produto = self._lavadora()
+
+        self.assertEqual(
+            "SIMILAR", _classificar(produto, "Lavadora Alta Pressao Residencial 1400w")
+        )
+
+    def test_a_different_kit_size_is_not_similar(self):
+        produto = ProductInput(9, "JG FERRAMENTAS C/110PCS", "Vonder", None)
+
+        self.assertEqual(
+            "DIVERGENTE",
+            _classificar(produto, "Jogo Ferramentas Com 5 Pecas Jfn 046 Vonder"),
+        )
+
+    def test_the_same_kit_size_stays(self):
+        """Mesma marca e mesma contagem de pecas: e o produto pedido."""
+        produto = ProductInput(9, "JG FERRAMENTAS C/110PCS", "Vonder", None)
+
+        self.assertEqual(
+            "COMPATIVEL",
+            _classificar(produto, "Berco Eva Jogo Ferramentas 110pcs Vonder Carrinho"),
+        )
+
+    def test_a_strap_is_an_accessory(self):
+        """R$ 47,90 de cinta entrou como o pulverizador de R$ 500."""
+        produto = ProductInput(8, "PULVERIZADOR COSTAL PJH", "Jacto", "825398 JACTO")
+
+        self.assertEqual(
+            "DIVERGENTE",
+            _classificar(produto, "1 Par De Cinta Para Pulverizador Costal Jacto Pjh"),
+        )
+
+    def test_a_detergent_applicator_is_an_accessory(self):
+        produto = ProductInput(
+            3, "7909439011096", "Jacto", "1350764 JACTO", "1271261", None, "LAVADORAS"
+        )
+
+        self.assertEqual(
+            "DIVERGENTE",
+            _classificar(produto, "Aplicador Ejetor Detergente Lavadoras Jacto J6000"),
+        )
+
+    def test_a_three_phase_machine_is_another_class(self):
+        """A J7600 trifasica de R$ 7.999 entrava como similar de uma de R$ 895."""
+        produto = ProductInput(
+            4, "LAVADORA ALTA PRESSAO J6000 PLUS 220V", "Jacto", "1350759 JACTO"
+        )
+
+        self.assertEqual(
+            "DIVERGENTE",
+            _classificar(produto, "Lavadora Alta Pressao Jacto J7600 Trifasica"),
+        )
+
+    def test_accented_piece_count_is_read(self):
+        """O anuncio escreve "5 Pecas" com cedilha; o padrao sem acento falhava."""
+        from copercitrus_price_collector.product_analysis import (
+            extract_package_quantity,
+        )
+
+        self.assertEqual("5 un", extract_package_quantity("Jogo Ferramentas 5 Peças"))

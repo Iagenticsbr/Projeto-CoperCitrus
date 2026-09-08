@@ -160,6 +160,10 @@ def parse_price(value: str | None) -> float | None:
 def extract_package_quantity(text: str | None) -> str | None:
     if not text:
         return None
+    # Comparar sobre o texto normalizado: o anuncio escreve "5 Pecas" com
+    # cedilha e til, e o padrao sem acento nao casava. O efeito era um jogo de
+    # 5 pecas passando como equivalente de um jogo de 110.
+    text = normalize_text(text)
     patterns = (
         r"\b(?:kit|pack|caixa|fardo)\s*(?:com|c/|de)?\s*(\d{1,4})\s*(?:unidades?|un\.?|pcs?)?\b",
         r"\b(\d{1,4})\s*(?:unidades?|un\.?|pcs?|pecas?)\b",
@@ -338,6 +342,8 @@ def match_tokens(value: str | None) -> list[str]:
 # acessorio de R$ 25,90 passava como SIMILAR do equipamento de R$ 900.
 ACCESSORY_TERMS = {
     "adaptador",
+    "alca",
+    "aplicador",
     "bico",
     "bomba",
     "cabecote",
@@ -345,11 +351,15 @@ ACCESSORY_TERMS = {
     "capa",
     "carvao",
     "cilindro",
+    "cinta",
     "conexao",
     "correia",
     "diafragma",
+    "difusor",
+    "ejetor",
     "engate",
     "escova",
+    "esguicho",
     "filtro",
     "gatilho",
     "gaxeta",
@@ -358,6 +368,7 @@ ACCESSORY_TERMS = {
     "mola",
     "oring",
     "pistao",
+    "polia",
     "registro",
     "reparo",
     "reposicao",
@@ -451,6 +462,11 @@ def classify_match(score: float) -> str:
 # entre iguais: 20V de bateria nao contradiz 220V de rede.
 VOLTAGENS_REDE = {"110", "127", "220", "380"}
 BIVOLT = {"bivolt", "biv"}
+# O anuncio raramente escreve 380: escreve "trifasica". E outra classe de
+# equipamento — a J7600 trifasica de R$ 7.999 entrava como similar de uma
+# J6000 de R$ 895, oito vezes o preco, so porque nenhuma das duas declarava
+# numero de voltagem.
+TRIFASICO = "trifasic"
 
 
 def extrair_voltagem(texto: str | None) -> set[str]:
@@ -460,6 +476,8 @@ def extrair_voltagem(texto: str | None) -> set[str]:
     normalizado = normalize_text(texto)
     if any(marca in normalizado for marca in BIVOLT):
         return {"bivolt"}
+    if TRIFASICO in normalizado:
+        return {"380"}
     achadas = set()
     for numero in re.findall(r"\b(\d{3})\s*v\b", normalizado):
         if numero in VOLTAGENS_REDE:
@@ -527,6 +545,48 @@ def codigos_de_modelo(texto: str | None) -> set[str]:
     }
 
 
+# Marcas que aparecem nos anuncios do setor. Serve para reconhecer que o
+# anuncio declara uma marca diferente da pedida — nao para validar a marca.
+MARCAS_CONHECIDAS = {
+    "black", "bosch", "decker", "dewalt", "einhell", "hidromar", "intech",
+    "jacto", "karcher", "makita", "mayle", "nove54", "philco", "schulz",
+    "stanley", "tekna", "tramontina", "vonder", "wap", "worx", "xtrong",
+}
+
+
+def mesma_marca(produto: ProductInput, titulo: str) -> bool:
+    """O anuncio nao declara marca concorrente da pedida.
+
+    Uma Karcher HD-585 de R$ 2.550 entrou como similar de uma lavadora Jacto:
+    mesma funcao, voltagem sem conflito, marca outra. Para comparar preco de
+    um SKU, marca diferente nao e alternativa — e outro produto, e desloca a
+    mediana em milhares de reais.
+
+    Anuncio que nao declara marca nenhuma passa: muito vendedor escreve so o
+    modelo, e reprovar por omissao descartaria oferta boa.
+    """
+    pedida = set(match_tokens(produto.marca)) & MARCAS_CONHECIDAS
+    do_modelo = set(match_tokens(produto.modelo)) & MARCAS_CONHECIDAS
+    pedida |= do_modelo
+    ofertada = set(match_tokens(titulo)) & MARCAS_CONHECIDAS
+    if not pedida or not ofertada:
+        return True
+    return bool(pedida & ofertada)
+
+
+def mesma_embalagem(produto: ProductInput, titulo: str) -> bool:
+    """Kit de 5 pecas nao e similar de kit de 110 pecas.
+
+    Sao o mesmo tipo de produto e a mesma marca, mas nao sao a mesma compra:
+    o preco de um nao diz nada sobre o preco do outro.
+    """
+    pedida = extract_package_quantity(descricao_efetiva(produto))
+    ofertada = extract_package_quantity(titulo)
+    if not pedida or not ofertada:
+        return True
+    return pedida == ofertada
+
+
 def classificar_oferta(
     produto: ProductInput, titulo: str, pontuacao: float, corte_exato: float = 70.0
 ) -> str:
@@ -552,11 +612,24 @@ def classificar_oferta(
     # da para afirmar que e uma lavadora Jacto, nao qual delas. Chamar de
     # exato seria afirmar mais do que a planilha diz.
     sem_nome_proprio = descricao_efetiva(produto) != produto.produto
-    if pontuacao >= corte_exato and not outro_modelo and not sem_nome_proprio:
+    # A quantidade da embalagem vale contra o exato tambem: um jogo de 5 pecas
+    # pontua alto contra um jogo de 110 pecas — mesmo tipo, mesma marca, quase
+    # o mesmo texto — e nao e o mesmo produto nem de longe.
+    if (
+        pontuacao >= corte_exato
+        and not outro_modelo
+        and not sem_nome_proprio
+        and mesma_embalagem(produto, titulo)
+    ):
         return "COMPATIVEL"
-    if mesma_funcao(produto, titulo) and voltagem_compativel(
-        extrair_voltagem(f"{produto.produto} {produto.modelo or ''}"),
-        extrair_voltagem(titulo),
+    if (
+        mesma_funcao(produto, titulo)
+        and mesma_marca(produto, titulo)
+        and mesma_embalagem(produto, titulo)
+        and voltagem_compativel(
+            extrair_voltagem(f"{produto.produto} {produto.modelo or ''}"),
+            extrair_voltagem(titulo),
+        )
     ):
         return "SIMILAR"
     return "DIVERGENTE"
